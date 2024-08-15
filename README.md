@@ -1,9 +1,9 @@
 <h1 align="center">Olá 👋, Eu sou Leonardo Malaquias</h1>
 <h3 align="center">Apaixonado por Estatistica e análise de dados/ciência de dados residente em Goiânia/Brasil</h3>
 
-- 📫 Como me achar **leonardogmalaquias@gmail.com**
+- 📫 Como me achar: **leonardogmalaquias@gmail.com**
 
-- ⚡️ Fato curioso **Eu gosto e tenho facilidade em aprender novas habilidades.**
+- ⚡️ Fato curioso: **Eu gosto e tenho facilidade em aprender novas habilidades.**
 
 <h3 align="left">Connect with me:</h3>
 <p align="left">
