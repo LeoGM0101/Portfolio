@@ -1,0 +1,314 @@
+---
+title: "Trabalho de Análise de Dados Categóricos"
+author: "Leonardo Gomes Malaquias"
+date: "2024-02-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Variáveis e objetivo do trabalho
+
+Objetivo: saber se foi concedido ou não empréstimo pessoal com base nas
+covariáveis do conjunto de dados.
+
+ID: ID do cliente
+Age: Idade do Cliente
+Experience: Experiência do Cliente
+Income: Renda do Cliente
+ZIP.Code: CEP de residência do cliente
+Family: Número de familiares do cliente
+CCAvg: pontuação média do cartão de crédito
+Education: Educação do cliente
+Mortgage: Hipoteca contraída ou não contraída pelo cliente
+Personal.Loan: 0 = Nenhum empréstimo pessoal concedido, 1 = empréstimo pessoal concedido
+Securities.Account: Ter ou não ter uma Conta de Valores Mobiliários
+CD.Account: Ter ou não ter uma conta CD
+Online: Usar ou não ter serviços bancários online
+CreditCard: Ter ou não cartão de crédito
+
+
+## Entrando com os dados
+
+```{r entrando com os dados echo=TRUE, message=FALSE, warning=FALSE}
+rm(list=ls())
+library(tidyverse)
+library(PerformanceAnalytics)
+library(MASS)
+library(hnp)
+library(Epi)
+set.seed(2024)
+
+
+dados = read.csv("C:/Users/leona/Desktop/Trabalho de Análise de Dados Categóricos/bankloan.csv") 
+
+treino = dados %>% 
+  dplyr::sample_frac(0.80)
+teste = dplyr::anti_join(dados, treino, by = 'ID')
+
+treino$Education = as.factor(treino$Education)
+teste$Education = as.factor(teste$Education)
+
+for(i in 10:ncol(treino)) {
+  treino[, i] = as.factor(treino[, i])
+}
+for(i in 10:ncol(teste)) {
+  teste[, i] = as.factor(teste[, i])
+}
+
+```
+
+
+
+## Análise descritiva
+
+```{r analise descritiva, message=FALSE, warning=FALSE}
+table(treino$Personal.Loan)
+
+dados_longos = tidyr::pivot_longer(treino, cols = c("Age", "Income", "Mortgage"), names_to = "Variavel", values_to = "Valor")
+
+estatisticas_descritivas = dados_longos %>%
+  group_by(Variavel) %>%
+  summarise(Media = mean(Valor),
+            Mediana = median(Valor),
+            Desvio_Padrao = sd(Valor),
+            `IQR` = IQR(Valor),
+            Curtose = kurtosis(Valor),
+            Simetria = skewness(Valor),
+            Minimo = min(Valor),
+            Maximo = max(Valor),
+            outliers_inferiores = sum(Valor < quantile(Valor, 0.25) - 1.5 * IQR(Valor)),
+            outliers_superiores = sum(Valor > quantile(Valor, 0.75) + 1.5 * IQR(Valor))); estatisticas_descritivas
+
+
+ggplot(dados_longos, aes(x = Variavel, y = Valor)) +
+  geom_boxplot() +
+  facet_wrap(~ Variavel, scales = "free") +
+  labs(x = "Valores", y = "Frequências", title = "Boxplots das Variáveis") +
+  theme_minimal()
+
+ggplot(dados_longos, aes(x = Valor)) +
+  geom_histogram(color = "black", fill = "lightblue") +
+  facet_wrap(~ Variavel, scales = "free") +
+  labs(x = "Valores", y = "Frequências", title = "Histogramas das Variáveis") +
+  theme_minimal()
+  
+```
+
+A variável "Age" representa a idade e possui uma média e mediana próximas, indicando uma distribuição simétrica. O desvio padrão (11.46232) é moderado, indicando uma dispersão moderada dos dados em torno da média. O IQR (20) destaca a amplitude da maior parte dos dados. A curtose negativa (-1.15637528) sugere uma distribuição mais achatada do que a distribuição normal. A simetria próxima de zero (-0.03967859) indica uma distribuição quase simétrica. Não há outliers inferiores ou superiores identificados.
+A variável "Income" representa a renda e possui uma média maior que a mediana, sugerindo uma distribuição assimétrica para a direita. O desvio padrão (46.31594) é relativamente alto, indicando uma dispersão significativa dos dados em torno da média. O IQR (60) destaca a amplitude da maior parte dos dados. A curtose próxima de zero (-0.06231488) indica uma distribuição próxima da normal. A simetria positiva (0.83436312) sugere uma inclinação para a direita na distribuição. Não há outliers inferiores identificados, mas há 72 outliers superiores.
+A variável "Mortgage" representa o valor da hipoteca e possui uma média considerável, sugerindo uma distribuição com uma cauda longa para a direita. A mediana é muito menor que a média, destacando a assimetria positiva da distribuição. O desvio padrão (103.62551) é muito alto, indicando uma dispersão significativa dos dados em torno da média. O IQR (102) destaca a amplitude da maior parte dos dados. A curtose positiva (4.91590685) indica uma distribuição com uma concentração maior de valores extremos em comparação com uma distribuição normal. A simetria positiva (2.12929488) confirma essa inclinação pronunciada para a direita. Não há outliers inferiores identificados, mas há 240 outliers superiores.
+
+
+## Ajuste do Modelo Logístico para os efeitos principais
+
+### Ajuste para cada covariável
+```{r covar prin, message=FALSE, warning=FALSE}
+fit1 = glm(Personal.Loan ~ Income, data = treino,
+               family = binomial(link = "logit")); summary(fit1)
+fit2 = glm(Personal.Loan ~ Family, data = treino,
+           family = binomial(link = "logit")); summary(fit2)
+fit3 = glm(Personal.Loan ~ CCAvg, data = treino,
+           family = binomial(link = "logit")); summary(fit3)
+fit4 = glm(Personal.Loan ~ Education, data = treino,
+           family = binomial(link = "logit")); summary(fit4)
+fit5 = glm(Personal.Loan ~ Securities.Account, data = treino,
+           family = binomial(link = "logit")); summary(fit5)
+fit6 = glm(Personal.Loan ~ CD.Account, data = treino,
+           family = binomial(link = "logit")); summary(fit6)
+fit7 = glm(Personal.Loan ~ Online, data = treino,
+           family = binomial(link = "logit")); summary(fit7)
+fit8 = glm(Personal.Loan ~ CreditCard, data = treino,
+           family = binomial(link = "logit")); summary(fit8)
+
+
+```
+
+Foi realizado o ajuste para as covariáveis do conjunto de dados para verificar se as mesmas são significativas para determinar se foi concedido ou não empréstimos pessoais aos clientes. Entre todas as variáveis testadas, todas foram significativas com exceção das variáveis Securities.Account (Possui ou não Conta de Valores Mobiliários), Online (Utiliza os Serviços de Internet Banking) e CreditCard (Possui ou não cartão de crédito).
+
+
+### Ajuste dos Modelos
+
+```{r modelo efeitos prin message=FALSE, warning=FALSE}
+ajust = glm(Personal.Loan ~ 1, data = treino,
+            family = binomial(link = "logit"))
+ajust1 = glm(Personal.Loan ~ ., data = treino,
+            family = binomial(link = "logit"))
+anova(ajust1, test = "Chisq")
+summary(ajust1)
+
+ajust_efeitos = stepAIC(ajust1, direction = "both")
+summary(ajust_efeitos)
+
+
+anova(ajust, ajust1, ajust_efeitos, test = "Chisq")
+ajust_efeitos$deviance - ajust1$deviance
+
+```
+
+A função stepAIC() é usada para realizar seleção de variáveis em modelos de regressão com base no critério de informação de Akaike (AIC). Ela automatiza o processo de construção e avaliação de modelos, permitindo adicionar ou remover variáveis de forma iterativa para encontrar o modelo que melhor equilibra ajuste e simlicidade. O algoritmo pode executar etapas "forward", "backward" ou ambas, dependendo do argumento "direction" especificado. Ele avalia cada modelo candidato usando o AIC e continua iterando até que o melhor modelo seja identificado ou até que nenhum apimoramento adicional seja alcançado. O argumento "both" é o valor padrão para o parâmetro "direction". Ele indica que o algoritmo deve realizar tanto a etapa de seleção forward quanto a etapa de seleção backward. Na etapa forward, o algoritmo começa sem variáveis no modelo e adiciona iterativamente variáveis que melhoram o AIC do modelo. Na etapa backward, o algoritmo começa com todas as variáveis no modelo e remove iterativamente as variáveis que pioram o AIC do modelo. O processo continua até que nenhuma variável adicional possa ser adicionada ou removida sem piorar o AIC.
+
+Neste caso, a diferença entre o deviance do ajust1 e ajust_efeitos não é significativa. Logo, será usado o modelo ajust_efeitos por conta do menor AIC.
+
+
+
+```{r message=FALSE, warning=FALSE}
+ajust3 = glm(Personal.Loan ~ Income + Family + CCAvg + Education +
+               Securities.Account + CD.Account + Online + CreditCard, data=treino,
+            family = binomial(link = "logit"))
+summary(ajust3)
+
+anova(ajust, ajust_efeitos, ajust3, test = "Chisq")
+
+
+```
+
+o modelo ajust_efeitos apresentou o deviance um pouco inferior, apesar da diferença 
+não ser significativa. Logo, este modelo será considerado.
+
+
+## Ajuste dos Modelos com efeito de interação
+
+### Ajuste para cada efeito de interação
+
+```{r covar int, message=FALSE, warning=FALSE}
+fit1 = glm(Personal.Loan ~ Age:Family, data = treino,
+           family = binomial(link = "logit")); summary(fit1)
+fit2 = glm(Personal.Loan ~ Age:CCAvg, data = treino,
+           family = binomial(link = "logit")); summary(fit2)
+fit3 = glm(Personal.Loan ~ Age:Education, data = treino,
+           family = binomial(link = "logit")); summary(fit3)
+fit4 = glm(Personal.Loan ~ Age:Mortgage, data = treino,
+           family = binomial(link = "logit")); summary(fit4)
+fit5 = glm(Personal.Loan ~ Experience:Family, data = treino,
+           family = binomial(link = "logit")); summary(fit5)
+fit6 = glm(Personal.Loan ~ Experience:Education, data = treino,
+           family = binomial(link = "logit")); summary(fit6)
+fit7 = glm(Personal.Loan ~ Income:Family, data = treino,
+           family = binomial(link = "logit")); summary(fit7)
+fit8 = glm(Personal.Loan ~ Income:CCAvg, data = treino,
+           family = binomial(link = "logit")); summary(fit8)
+fit9 = glm(Personal.Loan ~ Income:Education, data = treino,
+           family = binomial(link = "logit")); summary(fit9)
+fit10 = glm(Personal.Loan ~ ZIP.Code:Education, data = treino,
+           family = binomial(link = "logit")); summary(fit10)
+
+```
+Foi realizado o ajuste para alguns efeitos de interação para verificar se os mesmos são significativas para determinar se foi concedido ou não empréstimos pessoais. Dentre os efeitos testados, apenas a interação entre ZIP.Code:Education não foi significativa.
+
+
+### Ajuste dos Modelos
+
+```{r modelos int, message=FALSE, warning=FALSE}
+ajust_inicial = glm(Personal.Loan ~ .^2, data = treino,
+                      family = binomial(link = "logit"))
+summary(ajust_inicial)
+
+ajust_stepwise = stepAIC(ajust_inicial, direction = "both")
+summary(ajust_stepwise)
+
+ajust_final = glm(Personal.Loan ~ Age + Experience + Income + 
+                    CCAvg + Mortgage + Securities.Account + CD.Account + 
+                    Online + CreditCard + Age:Family + Age:CCAvg + Age:Education + 
+                    Age:Mortgage + Experience:Family + Experience:Education + 
+                    Income:Family + Income:CCAvg + Income:Education + Family:CCAvg + 
+                    Family:Education + Family:Mortgage + Family:Securities.Account + 
+                    Family:CD.Account + CCAvg:Education + CCAvg:Online + 
+                    Online:CreditCard, data = treino,
+                  family = binomial(link = "logit"))
+
+summary(ajust_final)
+anova(ajust_final, test = "Chisq")
+
+
+anova(ajust_inicial, ajust_stepwise, ajust_final, test = "Chisq")
+
+```
+
+O modelo ajust_stepwise apresenta o menor deviance dentre todos os outros modelos
+de efeitos de interação. Logo, este modelo será selecionado.
+
+
+## Análise dos Resíduos e Seleção do modelo
+
+
+### Modelo de Efeitos Principais vs. Modelo com Efeitos de Interação
+
+```{r comparacao, message=FALSE, warning=FALSE}
+
+anova(ajust, ajust_efeitos, ajust_stepwise, test = "Chisq")
+
+TRV = deviance(ajust_efeitos) - deviance(ajust_stepwise)
+gl = df.residual(ajust_efeitos) - df.residual(ajust_stepwise)
+p = 1 - pchisq(TRV, gl)
+cbind(TRV, gl, p)
+
+
+```
+
+O modelo ajust_stepwise apresenta o menor deviance dentre todos os outros modelos.
+Logo, a capacidade de classificação deste modelo é superior ao do modelo de efeitos
+principais.
+
+
+
+### Gráfico dos Resíduos e Envelope Simulado
+
+```{r residuos, message=FALSE, warning=FALSE}
+# graficos dos residuos de pearson - efeitos de interação
+resp = data.frame(indice = 1:nrow(treino),
+                  residuos = residuals(ajust_stepwise, type = "pearson"))
+ggplot(resp, aes(x = indice, y = residuos)) +
+  geom_point() +
+  geom_hline(yintercept = 0) +
+  ylim(-5, 10) +
+  labs(x = "Índice - Modelocom Efeitos de Interação", y = "Resíduos")
+
+hnp(ajust_stepwise, halfnormal = FALSE)
+
+
+
+
+# graficos dos residuos de pearson - efeitos principais
+resp = data.frame(indice = 1:nrow(treino),
+                  residuos = residuals(ajust_efeitos, type = "pearson"))
+ggplot(resp, aes(x = indice, y = residuos)) +
+  geom_point() +
+  geom_hline(yintercept = 0) +
+  ylim(-5, 10) +
+  labs(x = "Índice - Modelo de Efeitos Principais", y = "Resíduos")
+
+hnp(ajust_efeitos, halfnormal = FALSE)
+
+
+```
+
+
+
+
+### Curva ROC
+
+```{r roc, message=FALSE, warning=FALSE}
+# efeitos dos residuos
+set.seed(2024)
+predicao = predict(ajust_stepwise, newdata = teste, type = "response")
+teste$predicao = predicao
+roc(teste$predicao, teste$Personal.Loan)
+
+# efeitos principais
+hnp(ajust_efeitos, halfnormal = FALSE)
+predicao_efeitosprin = predict(ajust_efeitos, newdata = teste, type = "response")
+teste$predicao_efeitosprin = predicao_efeitosprin
+ROC(teste$predicao_efeitosprin, teste$Personal.Loan)
+
+```
+
+O AUC (Área sob a curva) de ambos são praticamente iguais. O modelo que contêm os efeitos de interação apresenta a sensibilidade e especificidade superiores. Poderá ser usado ambos os modelos para a classificação, porém o modelo que contêm apenas os efeitos principais possui maior facilidade de interpretação.
+
+```{r message=FALSE, warning=FALSE}
+summary(ajust_efeitos)
+exp()
+```
