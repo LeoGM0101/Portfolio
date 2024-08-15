@@ -1,0 +1,6 @@
+1 - Carregar as bibliotecas
+2 - Baixar os Fundos
+3 - Cálculo dos retornos dos fundos
+4 - Cálculo do VaR diário e/ou VaR mensal
+
+Obs.: Não precisa se preocupar em rodar todos os scripts. Para fazer o cálculo do VaR, basta rodar o código VaR_diário ou VaR_mensal.
