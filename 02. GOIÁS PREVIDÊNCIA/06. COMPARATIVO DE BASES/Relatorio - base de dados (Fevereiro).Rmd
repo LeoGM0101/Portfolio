@@ -1,0 +1,157 @@
+---
+title: "Relatório - base de dados de Fevereiro"
+author: "Leonardo Gomes Malaquias"
+date: "2023-02-08"
+output:
+  html_document:
+    df_print: paged
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Este relatório é para analisar se há diferenças e/ou incongruências entre a base atuarial 01/2023 e a base 02/2023. A análise é feita com base no CPF dos servidores ativos e inativos, lembrando que o código não tem por finalidade corrigir os possíveis erros e incongruências na base e sim identificá-los.
+
+Primeiramente a análise será feita para a tabela dos servidores ativos, em seguida para a tabela dos servidores inativos.
+
+Abaixo, estão as possíveis incongruências da base atuarial de 02/2023. O valor retornado como TRUE significa que, para o CPF do servidor ativo, existe diferença entre a coluna analisada da base atuarial 01/2023 e a base atuarial 02/2023.
+
+
+``` {r}
+rm(list=ls())
+library(tidyverse)
+library(openxlsx)
+library(readxl)
+arquivos_anterior_ativos = read_excel("Z:/ArquivosTI/Atuario202301.xlsx", sheet = "Ativo")
+arquivos_atual_ativos = read_excel("Z:/ArquivosTI/Atuario202302.xlsx", sheet = "Ativo")
+
+```
+
+```{r}
+ativos_massa = arquivos_anterior_ativos %>%
+  inner_join(arquivos_atual_ativos, by = "ID_SERVIDOR_CPF") %>%
+  group_by(ID_SERVIDOR_CPF) %>%
+  summarise(massa = CO_COMP_MASSA.y != CO_COMP_MASSA.x) %>%
+  filter(massa == TRUE); ativos_massa
+
+```
+
+
+
+``` {r}
+ativos_fundo = arquivos_anterior_ativos %>%
+  inner_join(arquivos_atual_ativos, by = "ID_SERVIDOR_CPF") %>%
+  group_by(ID_SERVIDOR_CPF) %>%
+  summarise(fundo = CO_TIPO_FUNDO.y != CO_TIPO_FUNDO.x) %>%
+  filter(fundo == TRUE); ativos_fundo; ativos_fundo
+
+```
+
+
+
+``` {r}
+ativos_tipo_populacao = arquivos_anterior_ativos %>%
+  inner_join(arquivos_atual_ativos, by = "ID_SERVIDOR_CPF") %>%
+  group_by(ID_SERVIDOR_CPF) %>%
+  summarise(tipo_populacao = CO_TIPO_POPULACAO.y != CO_TIPO_POPULACAO.x) %>%
+  filter(tipo_populacao == TRUE); ativos_tipo_populacao
+
+```
+
+
+
+```{r}
+ativos_servidor_pis = arquivos_anterior_ativos %>%
+  inner_join(arquivos_atual_ativos, by = "ID_SERVIDOR_CPF") %>%
+  group_by(ID_SERVIDOR_CPF) %>%
+  summarise(servidor_pis = ID_SERVIDOR_PIS_PASEP.y != ID_SERVIDOR_PIS_PASEP.x) %>%
+  filter(servidor_pis == TRUE); ativos_servidor_pis
+
+```
+
+
+
+```{r}
+ativos_sexo = arquivos_anterior_ativos %>%
+  inner_join(arquivos_atual_ativos, by = "ID_SERVIDOR_CPF") %>%
+  group_by(ID_SERVIDOR_CPF) %>%
+  summarise(sexo = CO_SEXO_SERVIDOR.y != CO_SEXO_SERVIDOR.x) %>%
+  filter(sexo == TRUE); ativos_sexo
+
+```
+
+
+
+```{r}
+ativos_data_nascimento = arquivos_anterior_ativos %>%
+  inner_join(arquivos_atual_ativos, by = "ID_SERVIDOR_CPF") %>%
+  group_by(ID_SERVIDOR_CPF) %>%
+  summarise(data_nascimento = DT_NASC_SERVIDOR.y != DT_NASC_SERVIDOR.x) %>%
+  filter(data_nascimento == TRUE); ativos_data_nascimento
+
+```
+
+
+
+
+
+Abaixo, estão as possíveis incongruências dos aposentados inativos da base atuarial de 01/2023. Lembrando que o valor retornado como TRUE significa que existe diferença entre a coluna analisada da base atuarial 01/2023 e a base atuarial 02/2023.
+
+
+
+```{r}
+rm(list=ls())
+library(tidyverse)
+library(openxlsx)
+library(readxl)
+arquivos_anterior_inativos = read_excel("Z:/ArquivosTI/Atuario202301.xlsx", sheet = "Inativo")
+arquivos_atual_inativos = read_excel("Z:/ArquivosTI/Atuario202302.xlsx", sheet = "Inativo")
+```
+
+
+```{r}
+inativos_massa = arquivos_anterior_inativos %>%
+  inner_join(arquivos_atual_inativos, by = "ID_APOSENTADO_CPF") %>%
+  group_by(ID_APOSENTADO_CPF) %>%
+  summarise(massa = CO_COMP_MASSA.y != CO_COMP_MASSA.x) %>%
+  filter(massa == TRUE); inativos_massa
+
+```
+
+
+
+
+```{r}
+inativos_poder = arquivos_anterior_inativos %>%
+  inner_join(arquivos_atual_inativos, by = "ID_APOSENTADO_CPF") %>%
+  group_by(ID_APOSENTADO_CPF) %>%
+  summarise(poder = CO_PODER.y != CO_PODER.x) %>%
+  filter(poder == TRUE); inativos_poder
+
+```
+
+
+
+```{r}
+inativos_tipo_populacao = arquivos_anterior_inativos %>%
+  inner_join(arquivos_atual_inativos, by = "ID_APOSENTADO_CPF") %>%
+  group_by(ID_APOSENTADO_CPF) %>%
+  summarise(tipo_populacao = CO_TIPO_POPULACAO.y != CO_TIPO_POPULACAO.x) %>%
+  filter(tipo_populacao == TRUE); inativos_tipo_populacao
+
+```
+
+
+
+
+```{r}
+inativos_numero_dependentes = arquivos_anterior_inativos %>%
+  inner_join(arquivos_atual_inativos, by = "ID_APOSENTADO_CPF") %>%
+  group_by(ID_APOSENTADO_CPF) %>%
+  summarise(dependentes = NU_DEPENDENTES.y != NU_DEPENDENTES.x) %>%
+  filter(dependentes == TRUE); inativos_numero_dependentes
+
+```

@@ -1,0 +1,76 @@
+---
+title: "Quantitativo de Servidores que ingressaram em determinado período"
+author: "Leonardo Gomes Malaquias"
+date: "2023-03-03"
+output: word_document
+---
+
+Para Servidores ativos, temos:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, paged.print=FALSE, results='hide'}
+#Ativos
+rm(list=ls())
+library(tidyverse)
+library(openxlsx)
+library(readxl)
+dados = read_excel("Z:/ArquivosTI/Atuario202302.xlsx", sheet = "Ativo")
+
+dados$DT_ING_SERV_PUB = as.Date(dados$DT_ING_SERV_PUB, "%d/%m/%Y")
+
+condicao_1 = dados %>%
+  select(DT_ING_SERV_PUB) %>%
+  filter(DT_ING_SERV_PUB <= "2003/12/31") %>%
+  arrange(DT_ING_SERV_PUB)
+
+condicao_2 = dados %>%
+  select(DT_ING_SERV_PUB) %>%
+  filter(DT_ING_SERV_PUB >= "2004/01/01" & DT_ING_SERV_PUB <= "2017/07/06") %>%
+  arrange(DT_ING_SERV_PUB)
+
+condicao_3 = dados %>%
+  select(DT_ING_SERV_PUB) %>%
+  filter(DT_ING_SERV_PUB >= "2017/07/07") %>%
+  arrange(DT_ING_SERV_PUB)
+
+```
+
+
+
+Servidores ingressos até 31/12/2003: 30278 \
+Servidores ingressos de 01/01/2004 até 06/07/2017: 20482 \
+Servidores ingressos a partir de 07/07/2017: 5352 \
+
+
+Para servidores Inativos:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, paged.print=FALSE, results='hide'}
+#Inativos
+rm(list=ls())
+library(tidyverse)
+library(openxlsx)
+library(readxl)
+dados = read_excel("Z:/ArquivosTI/Atuario202302.xlsx", sheet = "Inativo")
+
+dados$DT_ING_SERV_PUB = as.Date(dados$DT_ING_SERV_PUB, "%d/%m/%Y")
+
+condicao_1_inativo = dados %>%    
+  select(DT_ING_SERV_PUB) %>%
+  filter(DT_ING_SERV_PUB <= "2003/12/31") %>%
+  arrange(DT_ING_SERV_PUB)              
+
+condicao_2_inativo = dados %>%
+  select(DT_ING_SERV_PUB) %>%
+  filter(DT_ING_SERV_PUB >= "2004/01/01" & DT_ING_SERV_PUB <= "2017/07/06") %>%
+  arrange(DT_ING_SERV_PUB)
+
+condicao_3_inativo = dados %>%
+  select(DT_ING_SERV_PUB) %>%
+  filter(DT_ING_SERV_PUB >= "2017/07/07") %>%
+  arrange(DT_ING_SERV_PUB)
+
+```
+\
+
+Servidores ingressos até 31/12/2003: 57121 \
+Servidores ingressos de 01/01/2004 até 06/07/2017: 526 \
+Servidores ingressos a partir de 07/07/2017: 107
