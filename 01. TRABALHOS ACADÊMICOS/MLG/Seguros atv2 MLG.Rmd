@@ -1,0 +1,219 @@
+---
+title: "Seguros atv2 MLG"
+author: "Leonardo Gomes Malaquias"
+date: "2023-12-18"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+A fim de ilustrar uma aplicação na área de seguros, considere parte dos dados
+descritos em de Jong e Heller (2008, pgs. 14-15) referentes aos valores
+pagos de seguros individuais (em dólares australianos) por danos com acidentes
+pessoais no período de julho de 1989 a junho de 1999. As análises
+serão restritas ao período de janeiro de 1998 a junho de 1999, um total de
+769 seguros pagos. Além do valor pago ao segurado ser~ao consideradas as seguintes variáveis explicativas: Legal, representaçãao legal (sim e não) e
+optime, tempo operacional para pagamento do seguro. Essa última variável
+assume valores no intervalo (0, 100) e por exemplo um valor 23 significa que
+23% dos seguros foram pagos antes do seguro em análise. Como está sendo
+considerado apenas parte dos dados (referentes aos últimos 18 meses), os valores
+de optime irão variar de 0,1 a 31,9.
+
+P.S.: Os dados usados no livro do Gilberto de Paula estão desatualizados. Os dados contidos aqui são da mesma fonte, porém atualizados há 6 meses atrás.
+
+#Entrada dos dados
+```{r dados, message=FALSE, warning=FALSE}
+install.packages("xts")
+install.packages("sp")
+install.packages("zoo")
+options(timeout = max(300, getOption("timeout")))
+install.packages("CASdatasets", repos = "http://cas.uqam.ca/pub/", type="source")
+rm(list=ls())
+library(CASdatasets)
+library(tidyverse)
+library(moments)
+data(ausautoBI8999)
+dados = ausautoBI8999 %>%
+  filter(AccDate >= "1998-01-01")
+
+
+dados1 = dados %>%
+  select(Legal, OpTime, AggClaim) %>%
+  filter(Legal == "Yes")
+# dados1$OpTime = as.factor(dados1$OpTime)
+
+dados0 = dados %>%
+  select(Legal, OpTime, AggClaim) %>%
+  filter(Legal == "No")
+# dados0$OpTime = as.factor(dados0$OpTime)
+
+
+```
+
+
+#Análise descritiva para o grupo onde não há representação legal
+```{r analise descritiva 1, message=FALSE, warning=FALSE}
+#Analise Exploratoria dos dados
+dados_longos0 = tidyr::pivot_longer(dados0, cols = c(OpTime, AggClaim), names_to = "Variavel", values_to = "Valor")
+
+estatisticas_descritivas = dados_longos0 %>%
+  group_by(Variavel) %>%
+  summarise(Media = mean(Valor),
+            Mediana = median(Valor),
+            Desvio_Padrao = sd(Valor),
+            `IQR` = IQR(Valor),
+            Curtose = kurtosis(Valor),
+            Simetria = skewness(Valor),
+            Minimo = min(Valor),
+            Maximo = max(Valor),
+            outliers_inferiores = sum(Valor < quantile(Valor, 0.25) - 1.5 * IQR(Valor)),
+            outliers_superiores = sum(Valor > quantile(Valor, 0.75) + 1.5 * IQR(Valor))); estatisticas_descritivas
+
+
+
+```
+  Com relação ao valor do seguro, a média elevada e o desvio padrão indicam uma dispersão significativa nos valores do seguro. A curtose positiva sugere uma distribuição com caudas pesadas e uma alta concentração de valores ao redor da média. A simetria positiva indica uma assimetria para a direita, com uma cauda longa para valores mais altos. Existem 15 outliers superiores, indicando valores extremamente altos de seguro.
+  Já tempo operacional possui uma média considerável, indicando um período médio para o pagamento do seguro. Os dado apresentam uma alta dispersão. A curtose positiva indica caudas pesadas na distribuição. A simetria positiva sugere uma distribuição mais concentrada nos valores mais baixos. Não há outliers identificados para o tempo operacional.
+
+
+
+#Análise descritiva para o grupo quando há representação legal
+```{r analise descritiva 2, message=FALSE, warning=FALSE}
+#Analise Exploratoria dos dados
+dados_longos1 = tidyr::pivot_longer(dados1, cols = c(OpTime, AggClaim), names_to = "Variavel", values_to = "Valor")
+
+estatisticas_descritivas = dados_longos1 %>%
+  group_by(Variavel) %>%
+  summarise(Media = mean(Valor),
+            Mediana = median(Valor),
+            Desvio_Padrao = sd(Valor),
+            `IQR` = IQR(Valor),
+            Curtose = kurtosis(Valor),
+            Simetria = skewness(Valor),
+            Minimo = min(Valor),
+            Maximo = max(Valor),
+            outliers_inferiores = sum(Valor < quantile(Valor, 0.25) - 1.5 * IQR(Valor)),
+            outliers_superiores = sum(Valor > quantile(Valor, 0.75) + 1.5 * IQR(Valor))); estatisticas_descritivas
+
+
+
+```
+
+  Com relação ao valor do seguro, a média elevada e o desvio padrão indicam uma dispersão significativa nos valores do seguro. A curtose positiva sugere uma distribuição com caudas pesadas e uma alta concentração de valores ao redor da média. A simetria positiva indica uma assimetria para a direita, com uma cauda longa para valores mais altos. Existem 47 outliers superiores, indicando valores extremamente altos de seguro.
+  O tempo operacional possui uma média considerável, indicando um período médio para o pagamento do seguro. A curtose positiva indica caudas pesadas na distribuição. A simetria positiva sugere uma distribuição mais concentrada nos valores mais baixos.Não há outliers identificados para o tempo operacional.
+  
+
+#Ajuste do Modelo e Análise de diagnóstico
+```{r ajuste do modelo e análise de diagnóstico, message=FALSE, warning=FALSE}
+fit0.insurance = glm(AggClaim ~ OpTime + I(OpTime^2),
+                     family=Gamma(link=log), data = dados0)
+summary(fit0.insurance)
+
+fit1.insurance = glm(AggClaim ~ OpTime, family=Gamma(link=log), data = dados1)
+summary(fit1.insurance)
+
+
+require(MASS)
+gamma.shape(fit0.insurance)
+gamma.shape(fit1.insurance)
+
+
+
+ggplot(dados0, aes(x = OpTime, y = log(AggClaim))) +
+  geom_point() +
+  theme_minimal()
+
+ggplot(dados1, aes(x = OpTime, y = log(AggClaim))) +
+  geom_point() +
+  theme_minimal()
+
+
+
+
+ggplot(dados0, aes(x = AggClaim)) +
+  geom_density() +
+  theme_minimal()
+
+ggplot(dados1, aes(x = AggClaim)) +
+  geom_density() +
+  theme_minimal()
+
+fit.model = fit0.insurance
+source("https://www.ime.usp.br/~giapaula/envel_gama")
+
+fit.model = fit1.insurance
+source("https://www.ime.usp.br/~giapaula/envel_gama")
+
+fit.model <- fit0.insurance
+X <- model.matrix(fit.model)
+n <- nrow(X)
+p <- ncol(X)
+w <- fit.model$weights
+W <- diag(w)
+H <- solve(t(X)%*%W%*%X)
+H <- sqrt(W)%*%X%*%H%*%t(X)%*%sqrt(W)
+h <- diag(H)
+fi <- gamma.shape(fit.model)$alpha
+ts <- resid(fit.model,type="pearson")*sqrt(fi/(1-h))
+td <- resid(fit.model,type="deviance")*sqrt(fi/(1-h))
+di <- (h/(1-h))*(ts^2)
+a <- max(td)
+b <- min(td)
+plot(di,xlab="Índice", ylab="Distância de Cook", pch=16)
+abline(0.16, 0)
+
+fit.model <- fit1.insurance
+X <- model.matrix(fit.model)
+n <- nrow(X)
+p <- ncol(X)
+w <- fit.model$weights
+W <- diag(w)
+H <- solve(t(X)%*%W%*%X)
+H <- sqrt(W)%*%X%*%H%*%t(X)%*%sqrt(W)
+h <- diag(H)
+fi <- gamma.shape(fit.model)$alpha
+ts <- resid(fit.model,type="pearson")*sqrt(fi/(1-h))
+td <- resid(fit.model,type="deviance")*sqrt(fi/(1-h))
+di <- (h/(1-h))*(ts^2)
+a <- max(td)
+b <- min(td)
+plot(di,xlab="Índice", ylab="Distância de Cook", pch=16)
+abline(0.16, 0)
+
+
+```
+
+
+  Para o grupo onde não tem representação legal, as estimativas dos parâmetros nos mostram que que tanto B10 quanto B20 são significativos, indicando que o crescimento do valor pago dos seguros cresce de maneira quadrática, porém esse crescimento se estabiliza a medida que o crescimento do tempo operacional aumenta. Isso pode ser observado no gráfico de dispersão. Já o gráfico do envelope simulado nos mostra que os valores menores dos seguros foram superstimados pelo modelo, todavia os demais valores estão agrupados em torno da reta e dentro dos limites inferiores e superiores, indicando que a dispersão é homocedástica.
+  Já para o grupo onde há representação legal, as estimativas dos parâmetros nos mostram que a variável OpTime é significativa para o modelo e que o valor pago cresce linearmente de acordo com o tempo operacional com variabilidade constante, o que pode ser observado no gráfico de dispersão. Já o gráfico do envelope simulado indica que, para esse grupo, o modelo não está bem ajustado, pois há vários pontos fora do limite e esses pontos formam um S entorno da reta.
+  O gráfico da distancia de cook mostra que, para ambos os grupos, há pontos que podem ser influentes. Contudo, a análise descritiva dos dados nos mostra que essas observações correspondem ao alto valor pago do seguro.
+  
+```{r ajuste do modelo e análise de diagnóstico sem pontos aberrantes, message=FALSE, warning=FALSE}
+dados0_v2 = dados0[-c(42, 46, 207, 221), ]
+dados1_v2 = dados1[-c(537, 467, 369), ]
+
+fit0.insurance_v2 = glm(AggClaim ~ OpTime + I(OpTime^2),
+                     family=Gamma(link=log), data = dados0_v2)
+summary(fit0.insurance_v2)
+
+fit1.insurance_v2 = glm(AggClaim ~ OpTime, family=Gamma(link=log), data = dados1_v2)
+summary(fit1.insurance_v2)
+
+
+require(MASS)
+gamma.shape(fit0.insurance_v2)
+gamma.shape(fit1.insurance_v2)
+
+fit.model = fit0.insurance_v2
+source("https://www.ime.usp.br/~giapaula/envel_gama")
+
+fit.model = fit1.insurance_v2
+source("https://www.ime.usp.br/~giapaula/envel_gama")
+
+```
+  
+  Eliminando esses pontos aberrantes, nota-se que esses pontos não eram influentes em nenhum grupo, ou seja, os coeficientes ainda continuam sendo significativos e o gráfico do envelope simulado aponta que o ajuste do modelo gama para o grupo onde há representação legal não é o ideal.
+
+
