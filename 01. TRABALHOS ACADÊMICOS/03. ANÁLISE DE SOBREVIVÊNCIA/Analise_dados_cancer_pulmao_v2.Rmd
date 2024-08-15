@@ -1,0 +1,806 @@
+---
+title: "Análise de dados reais - câncer de pulmão"
+author: "Prof. Dr. Eder Angelo Milani"
+date: "04/12/2023"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+conjunto de dados de câncer de pulmão contém 2.969 observações de pacientes diagnósticados em 2.014
+e que tiveram acompanhamento até 2.019, sendo o evento de interesse o tempo até a morte por câncer de
+pulmão. O mesmo apresenta algumas covariáveis, que em geral, são importantes para explicar o tempo até
+a morte do pacientes. Além disso, nota-se que 2.130 pacientes morreram devido ao câncer e 839 pacientes
+tiveram seus tempos censurados a direita.
+
+
+Começando a análise, conhecendo os dados. 
+
+```{r}
+require(survival)
+require(ggplot2)
+require(survminer)
+
+dados1 <- read.csv("C:/Users/leona/Documents/Estatística/10 Semestre/Análise de Sobrevivência/cancer_pulmao.csv")
+           
+
+# frequencia da falha
+table(dados$Censura)
+
+# analise do tempo de falha
+EKM <- survfit(Surv(TEMPO, Censura)~1, data = dados)
+
+ggsurvplot(EKM, 
+           data = dados, 
+           ylab="S(t)",
+           xlab="Tempo",
+           title="Tempo de sobrevivencia estimado via K-M",
+           censor.shape=" ",
+           risk.table = T, 
+           risk.table.title="Individuos em risco"
+)
+
+
+
+# verificando as covariaveis 
+
+# idade
+head(dados$IDADE)
+table(dados$IDADE)
+
+dados$Idade_cat <- ifelse(dados$IDADE<60, 0, 1)
+table(dados$Idade_cat)
+
+# sexo
+
+table(dados$SEXO)
+dados$SEXO <- dados$SEXO-1
+
+table(dados$SEXO)
+
+# cirurgia
+
+head(dados$CIRURGIA)
+table(dados$CIRURGIA)
+
+# radioterapia
+
+head(dados$RADIO)
+table(dados$RADIO)
+
+# quimio
+
+head(dados$QUIMIO)
+table(dados$QUIMIO)
+
+# estadiamento 
+
+head(dados$EC)
+table(dados$EC)
+
+# estadiamento agrupado 
+
+head(dados$ECGRUP)
+table(dados$ECGRUP)
+
+# data do diagnostico
+
+head(dados$DTDIAG)
+#table(dados$DTDIAG)
+
+# ano da ultima informação 
+
+head(dados$ANOULTINF)
+table(dados$ANOULTINF)
+
+
+# classificacao T
+
+head(dados$T)
+table(dados$T)
+
+# Mapeamento
+mapeamento_t <- c("0" = "0", 
+                "1" = "1", "1A" = "1", "1B" = "1", 
+                "2" = "2", "2A" = "2", "2B" = "2", 
+                "3" = "3", 
+                "4" = "4", 
+                "IS" = "IS", 
+                "X" = "X", 
+                "Y" = "Y")
+
+dados$T_mod <- mapeamento_t[dados$T]
+table(dados$T_mod)
+
+
+# classificacao M
+
+head(dados$M)
+table(dados$M)
+
+mapeamento_m <- c("0" = "0", 
+                "1" = "1", "1A" = "1", "1B" = "1", 
+                "X" = "X", 
+                "Y" = "Y")
+
+dados$M_mod <- mapeamento_m[dados$M]
+table(dados$M_mod)
+
+
+# classificacao N
+
+head(dados$N)
+table(dados$N)
+
+# classificacao Topogrup
+
+head(dados$TOPOGRUP)
+table(dados$TOPOGRUP)
+
+```
+
+Agora vamos proceder o ajuste dos modelos probabilísticos sem considerar regressão. A estratégia aqui é escolher o modelo e só depois inserir a regressão. 
+
+```{r}
+
+cat("Ajuste do modelo de regressão Exponencial", "\n")
+
+ajuste_exp <- survreg(Surv(dados$TEMPO,  dados$Censura) ~ 1, dist='exponential')
+
+ajuste_exp
+
+ajuste_exp$loglik
+
+cat("Ajuste do modelo de regressão Weibull", "\n")
+
+ajuste_w <- survreg(Surv(dados$TEMPO,  dados$Censura) ~ 1, dist='weibull')
+
+ajuste_w
+
+ajuste_w$loglik
+
+
+cat("Ajuste do modelo de regressão log-normal", "\n")
+
+ajuste_logn <- survreg(Surv(dados$TEMPO,  dados$Censura) ~ 1, dist='lognormal')
+
+ajuste_logn
+
+cat("Ajuste do modelo de regressão log-logistica", "\n")
+
+ajuste_loglog <- survreg(Surv(dados$TEMPO,  dados$Censura) ~ 1, dist='loglogistic')
+
+ajuste_loglog
+
+
+require(flexsurv)
+
+cat("Ajuste do modelo de regressão gama", "\n")
+
+ajuste_gama <-flexsurvreg(formula = Surv(dados$TEMPO,  dados$Censura) ~ 1, dist = "gamma")
+
+ajuste_gama
+
+```
+Analisanado o valor da log-verossimilhança, tem-se que o modelo log-normal é o que apresenta o maior valor da log-verossimilhança. Vamos agora verificar a qualidade do ajuste do modelo log-normal aos dados. 
+
+```{r}
+ekm <- survfit(Surv(TEMPO, Censura) ~ 1, data=dados)
+
+
+mu <- ajuste_logn$coefficients
+sigma <- ajuste_logn$scale
+s_log_n<- function(t){pnorm((-log(t)+mu)/sigma)}
+
+df_ajuste_log_normal <- data.frame(Tempos = ekm$time, 
+                                  KM = ekm$surv,
+                                  Ln = s_log_n(ekm$time))
+
+ggplot(df_ajuste_log_normal, aes(x=KM, y=Ln))+
+  geom_point()+
+  ylab("S(t) - Log-normal")+
+  xlab("S(t) - Kaplan-Meier")+
+  geom_abline(aes(intercept=0, slope=1), linewidth=1.1)+
+  ylim(0, 1)+
+  xlim(0, 1)
+
+```
+
+
+
+Do fato que o modelo log-normal apresentou um bom ajuste aos dados, a partir de agora vamos seguir com a análise utilizando o modelo probabilístico log-normal. Iniciamos a análise das covariáveis analisando uma por uma. 
+
+
+```{r}
+# variavel idade 
+
+ajuste_idade <- survreg(Surv(TEMPO,  Censura) ~ Idade_cat, dist='lognormal', dados)
+
+ajuste_idade
+
+
+# variavel sexo 
+ajuste_sexo <- survreg(Surv(TEMPO,  Censura) ~ SEXO, dist='lognormal', dados)
+
+ajuste_sexo
+
+
+# variavel cirurgia
+ajuste_cirurgia <- survreg(Surv(TEMPO,  Censura) ~ CIRURGIA, dist='lognormal', dados)
+
+ajuste_cirurgia
+
+# variavel radio
+ajuste_radio <- survreg(Surv(TEMPO,  Censura) ~ RADIO, dist='lognormal', dados)
+
+ajuste_radio
+
+
+# variavel quimio
+ajuste_quimio <- survreg(Surv(TEMPO,  Censura) ~ dados$QUIMIO, dist='lognormal', dados)
+
+ajuste_quimio
+
+# variavel estadiamento
+ajuste_estadiamento <- survreg(Surv(TEMPO,  Censura) ~ factor(dados$ECGRUP), dist='lognormal', dados)
+
+ajuste_estadiamento
+
+# variavel T modificada
+ajuste_T_mod <- survreg(Surv(TEMPO,  Censura) ~ factor(T_mod), dist='lognormal', dados)
+
+ajuste_T_mod
+
+# variavel M modificada
+ajuste_M_mod <- survreg(Surv(TEMPO,  Censura) ~ factor(M_mod), dist='lognormal', dados)
+
+ajuste_M_mod
+
+
+# variavel N modificada
+ajuste_N_mod <- survreg(Surv(TEMPO,  Censura) ~ factor(N), dist='lognormal', dados)
+
+ajuste_N_mod
+
+```
+
+A um nível de 10% de significância, todas as variáveis são estatísticamente significativas para explicar o evento de interesse. Agora vamos proceder o ajuste com todas as covariáveis na modelagem. 
+
+
+
+```{r}
+# todas as variaveis
+
+ajuste_todas <- survreg(Surv(TEMPO,  Censura) ~ Idade_cat + SEXO + CIRURGIA + RADIO + QUIMIO +
+    factor(dados$ECGRUP) + factor(T_mod) + factor(M_mod) + factor(N), dist='lognormal', dados)
+
+ajuste_todas
+
+```
+
+
+Observa-se problemas na estimação dos parâmetros. Vamos tentar encontrar o(s) causador(es)!
+
+
+Note as tabelas de frequência das variáveis ECGRUP e M. Note que ambas as classificações X e Y apresentam a mesma quantidade de pacientes. Na verdade, são os mesmos pacientes.
+
+```{r}
+
+table(dados$ECGRUP)
+
+table(dados$M)
+
+head(cbind(which(dados$ECGRUP=="X"), which(dados$M=="X")))
+
+head(cbind(which(dados$ECGRUP=="Y"), which(dados$M=="Y")))
+
+```
+
+Em resumo, as classificações em TNM e ECGRUP são equivalentes. Assim, basta incluir um delas na modelagem. 
+
+
+```{r}
+# ajuste com TNM
+
+ajuste_1 <- survreg(Surv(TEMPO,  Censura) ~ Idade_cat + SEXO + CIRURGIA + RADIO + QUIMIO +
+                        + factor(T_mod) + factor(M_mod) + factor(N), dist='lognormal', dados)
+
+ajuste_1
+
+# ajuste com ECGROUP
+
+ajuste_2 <- survreg(Surv(TEMPO,  Censura) ~ Idade_cat + SEXO + CIRURGIA + RADIO + QUIMIO +
+                          factor(dados$ECGRUP), dist='lognormal', dados)
+
+ajuste_2
+
+
+```
+
+Note que utilizando as variáveis TNM, tem-se ainda que para o nível Y, não houve o ajuste. O fato aqui é igual ao anterior, todos as três variáveis apresentam os mesmos pacientes. Veja a seguir. 
+
+
+```{r}
+head(cbind(which(dados$T_mod=="Y"), which(dados$M_mod=="Y"), which(dados$N=="Y")))
+```
+
+Olhando com mais atenção a informação sobre o que é a classificação `Y`, nota-se que é para tumores em que não se aplica a classificação TNM (são os tumores não sólidos). Disto, caso se queira utilizar a covariável TNM, indica-se excluir tais pacientes. 
+
+```{r}
+# ajuste com TNM
+
+novos_dados <- dados[dados$T_mod  != "Y", ]
+
+table(novos_dados$M_mod)
+table(novos_dados$N)
+table(novos_dados$T_mod)
+
+ajuste_3 <- survreg(Surv(TEMPO,  Censura) ~ Idade_cat + SEXO + CIRURGIA + RADIO + QUIMIO +
+            factor(T_mod) + factor(M_mod) + factor(N), dist='lognormal', novos_dados)
+
+ajuste_3
+```
+
+
+Neste ponto, tem-se então dois ajustes (ajuste 2 e 3). Antes de proseguir, vamos construir os intervalos de confiança e verificar a significância por meio do teste de hipóteses de Wald, mas utilizando os intervalos de confiança. 
+
+
+```{r}
+# ajuste com TNM
+
+#ajuste_3 <- survreg(Surv(TEMPO,  Censura) ~ Idade_cat + SEXO + CIRURGIA + RADIO + QUIMIO + 
+#factor(T_mod) + factor(M_mod) + factor(N), dist='lognormal', novos_dados)
+
+EMV <- c(ajuste_3$coefficients, ajuste_3$scale)
+LI <-  c(ajuste_3$coefficients, ajuste_3$scale) -1.96*sqrt(diag(ajuste_3$var))
+LS <-  c(ajuste_3$coefficients, ajuste_3$scale) +1.96*sqrt(diag(ajuste_3$var))
+cbind(EMV, LI, LS)
+
+# encluindo a variavel idade 
+
+ajuste_31 <- survreg(Surv(TEMPO,  Censura) ~ SEXO + CIRURGIA + RADIO + QUIMIO + factor(T_mod) + 
+                       factor(M_mod) + factor(N), dist='lognormal', novos_dados)
+
+ajuste_31
+
+EMV <- c(ajuste_31$coefficients, ajuste_31$scale)
+LI <-  c(ajuste_31$coefficients, ajuste_31$scale) -1.96*sqrt(diag(ajuste_31$var))
+LS <-  c(ajuste_31$coefficients, ajuste_31$scale) +1.96*sqrt(diag(ajuste_31$var))
+cbind(EMV, LI, LS)
+
+
+# vamos analisar agora o que acontece se excluir o nivel IS da variavel T_mod,
+#pois apresenta baixa volumetria
+
+novos_dados2 <- novos_dados[novos_dados$T_mod  != "IS", ]
+
+table(novos_dados2$M_mod)
+table(novos_dados2$N)
+table(novos_dados2$T_mod)
+
+ajuste_32 <- survreg(Surv(TEMPO,  Censura) ~ SEXO + CIRURGIA + RADIO + QUIMIO + factor(T_mod) + 
+                       factor(M_mod) + factor(N), dist='lognormal', novos_dados2)
+
+ajuste_32
+EMV <- c(ajuste_32$coefficients, ajuste_32$scale)
+LI  <- c(ajuste_32$coefficients, ajuste_32$scale) -1.96*sqrt(diag(ajuste_32$var))
+LS  <- c(ajuste_32$coefficients, ajuste_32$scale) +1.96*sqrt(diag(ajuste_32$var))
+cbind(EMV, LI, LS)
+
+
+# note que nao houve grandes mudancas nas estimativas pontuais,
+# mas o que chama atencao e o intervalo de confianca para essa estimativa,
+# mesmo assim vamos continuar a analise com o nivel IS da variavel T_mod
+
+# ao final, vamos ajustar um outro modelo so para os pacientes com classificação `Y`
+
+
+# ajuste com ECGROUP
+
+ajuste_2
+EMV <- c(ajuste_2$coefficients, ajuste_2$scale)
+LI <- c(ajuste_2$coefficients, ajuste_2$scale) -1.96*sqrt(diag(ajuste_2$var))
+LS <- c(ajuste_2$coefficients, ajuste_2$scale) +1.96*sqrt(diag(ajuste_2$var))
+cbind(EMV, LI, LS)
+
+# vamos analisar agora o que acontece se excluir o nivel 0 da variavel ECGROUP
+# pois apresenta baixa volumetria
+
+novos_dados3 <- dados[dados$ECGRUP  != "0", ]
+
+table(novos_dados3$ECGRUP)
+
+ajuste_21 <- survreg(Surv(TEMPO,  Censura) ~ Idade_cat + SEXO + CIRURGIA + RADIO + QUIMIO +
+                          factor(ECGRUP), dist='lognormal', novos_dados3)
+ajuste_21
+EMV <- c(ajuste_21$coefficients, ajuste_21$scale)
+LI <- c(ajuste_21$coefficients, ajuste_21$scale) -1.96*sqrt(diag(ajuste_21$var))
+LS <- c(ajuste_21$coefficients, ajuste_21$scale) +1.96*sqrt(diag(ajuste_21$var))
+cbind(EMV, LI, LS)
+
+# observe que o nivel "0" e o de referencia
+# note como reduziu a amplitude do intervalo de confianca do intercepto
+# por isso vamos continuar sem esse nivel da variavel ECGROUP
+
+
+# vamos analisar agora sem a variavel idade 
+
+ajuste_22 <- survreg(Surv(TEMPO,  Censura) ~ SEXO + CIRURGIA + RADIO + QUIMIO +
+                          factor(ECGRUP), dist='lognormal', novos_dados3)
+ajuste_22
+EMV <- c(ajuste_22$coefficients, ajuste_22$scale)
+LI <- c(ajuste_22$coefficients, ajuste_22$scale) -1.96*sqrt(diag(ajuste_22$var))
+LS <- c(ajuste_22$coefficients, ajuste_22$scale) +1.96*sqrt(diag(ajuste_22$var))
+cbind(EMV, LI, LS)
+```
+
+A partir de agora vamos seguir com dois modelos, sendo eles dos ajustes `ajuste_22` e `ajuste_31`.
+
+
+Verificando o ajuste do modelo `ajuste_22` aos dados foi utilizando os resíduos de Cox-Snell, definidos por
+$$\hat{e_i}=-log \Big( \Phi\Big( \frac{-ln (t_i) + \hat{\mu}}{\hat{\sigma}} \Big) \Big),$$
+sendo que $\hat{\mu} = \hat{\beta}_0 + \hat{\beta}_1 x_{i1} +  \ldots + \hat{\beta}_p x_{ip}$. 
+
+```{r}
+
+formula <- as.formula(~ SEXO + CIRURGIA + RADIO + QUIMIO + factor(ECGRUP))
+x <- as.matrix(model.matrix(formula, novos_dados3))
+dim(x)
+
+mu <- x%*% ajuste_22$coefficients
+
+residuo <- -log( pnorm((- log(novos_dados3$TEMPO) + mu) / ajuste_22$scale ) )
+
+summary(residuo)
+
+df_residuo <- data.frame(tempo = novos_dados3$TEMPO,
+                         Residuo = residuo,
+                         cens = novos_dados3$Censura)
+
+ekm <- survfit(Surv(residuo, cens)~ 1, data= df_residuo)
+
+#summary(ekm)
+
+plot_ekm <- ggsurvplot(ekm, 
+           data = df_residuo, 
+           ylab="S(t) dos residuos",
+           xlab="Residuos",
+           title="",
+           conf.int = F,
+           censor.shape=" ",
+           risk.table = F
+)
+
+plot_ekm
+
+df_residuo$Sobre_res_exp <- exp(-df_residuo$Residuo)
+
+
+plot_exp <- plot_ekm$plot+
+  geom_line(data=df_residuo, aes(x=Residuo, y=Sobre_res_exp), linetype="dashed", linewidth=1.2) 
+
+plot_exp
+
+
+df_residuo2 <- data.frame(ekm = ekm$surv,
+                          t = ekm$time,
+                          sobre_exp1 = exp(-ekm$time))
+
+
+ggplot(df_residuo2, aes(x=ekm, y=sobre_exp1))+
+  geom_point()+
+  ylab("S(t) - Exponencial")+
+  xlab("S(t) - Kaplan-Meier")+
+  geom_abline(aes(intercept=0, slope=1), linewidth=1.1)+
+  ylim(0, 1)+
+  xlim(0, 1)
+
+
+```
+Observa-se um bom ajuste do modelo `ajuste_22` aos dados. Repetindo a análise de resíduo para o ajuste do modelo `ajuste_31`, tem-se o resultado a seguir.
+
+```{r}
+
+formula <- as.formula(~ SEXO + CIRURGIA + RADIO + QUIMIO + factor(T_mod) + factor(M_mod) 
+                      + factor(N))
+x <- as.matrix(model.matrix(formula, novos_dados))
+
+dim(x)
+
+mu <- x%*% ajuste_31$coefficients
+
+residuo <- -log( pnorm((- log(novos_dados$TEMPO) + mu) / ajuste_31$scale ) )
+
+summary(residuo)
+
+df_residuo <- data.frame(tempo = novos_dados$TEMPO,
+                         Residuo = residuo,
+                         cens = novos_dados$Censura)
+
+ekm <- survfit(Surv(residuo, cens)~ 1, data= df_residuo)
+
+#summary(ekm)
+
+plot_ekm <- ggsurvplot(ekm, 
+           data = df_residuo, 
+           ylab="S(t) dos residuos",
+           xlab="Residuos",
+           title="",
+           conf.int = F,
+           censor.shape=" ",
+           risk.table = F
+)
+
+plot_ekm
+
+df_residuo$Sobre_res_exp <- exp(-df_residuo$Residuo)
+
+
+plot_exp <- plot_ekm$plot+
+  geom_line(data=df_residuo, aes(x=Residuo, y=Sobre_res_exp), linetype="dashed", linewidth=1.2) 
+
+plot_exp
+
+
+df_residuo2 <- data.frame(ekm = ekm$surv,
+                          t = ekm$time,
+                          sobre_exp1 = exp(-ekm$time))
+
+
+ggplot(df_residuo2, aes(x=ekm, y=sobre_exp1))+
+  geom_point()+
+  ylab("S(t) - Exponencial")+
+  xlab("S(t) - Kaplan-Meier")+
+  geom_abline(aes(intercept=0, slope=1), linewidth=1.1)+
+  ylim(0, 1)+
+  xlim(0, 1)
+
+
+```
+
+
+Também se observa um bom ajuste do modelo aos dados. Qual modelo escolher? 
+
+
+A resposta deveria ser construída juntamente com o pesquisador que tem interesse na análise. No entanto, como não temos esse profissional, vamos escolher por meio do critério AIC e da análise dos resíduos. 
+
+
+```{r}
+AIC(ajuste_31)
+
+AIC(ajuste_22)
+
+```
+
+
+O modelo que deve ser preferido é aquele que apresenta o menor valor do critério, sendo então nesse caso o modelo do ajuste `ajuste_31`
+
+Note que em ambos os critérios, tem-se indicações para o modelo do ajuste `ajuste_31`. Portanto é ele o escolhido. 
+
+
+A função de sobrevivência obtida pelo modelo de regressão exponencial ajustado os dados é 
+
+$$ \Phi\Big( \frac{-ln (t_i) + \hat{\mu}}{\hat{\sigma}} \Big),$$
+
+sendo que $\hat{\mu} = \hat{\beta}_0 + \hat{\beta}_1 x_{i1} +  \ldots + \hat{\beta}_p x_{ip}$, sendo que $x_1$ é a variável sexo, $x_2$ é a variável cirurgia, e assim sucessivamente. 
+
+Qual interpretação tiramos em relação aos coeficientes estimados? Para exemplificar, vamos considerar dois pacientes que são caracterizados da seguinte forma:
+
+Paciente 1
+
+- é do sexo masculino - $x_1=0$
+- não fez cirurgia - $x_2=0$
+- não fez radio - $x_3=0$
+- não fez quimio - $x_4=0$
+- a variável T é categorizado como 1 - $x_5=1$ e $x_6 = x_7 = x_8 = x_9 = x_{10} =0$
+- a variável M é categorizado como 1 - $x_{11}=1$ e $x_{12}=0$
+- a variável N é categorizado como 1 - $x_{13}=1$ e $x_{14} = x_{15} = x_{16} =0$
+
+
+O Paciente 2 só é diferente do Paciente 1 devido ao sexo. 
+
+
+```{r}
+TEMPO <- seq(1, 2000, 1)
+
+x1 <- c(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0)
+mu1 <- x1%*% ajuste_31$coefficients
+
+S_1 <- pnorm((- log(TEMPO) + mu1) / ajuste_31$scale ) 
+
+
+x2 <- c(1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0)
+mu2 <- x2%*% ajuste_31$coefficients
+
+S_2 <- pnorm((- log(TEMPO) + mu2) / ajuste_31$scale ) 
+
+
+df_aux <- data.frame(TEMPO = TEMPO, 
+                     Sobre_1= S_1,
+                     Sobre_2= S_2)
+
+ggplot(df_aux, aes(x=TEMPO, y=Sobre_1))+
+  geom_line(col="blue")+
+  geom_line(aes(x=TEMPO, y=Sobre_2), col="red")+
+  ylab("S(t) - estimada")+
+  xlab("Tempo")
+```
+
+
+Uma outra comparação, agora considerando diferença no tratamento, sendo: 
+
+
+Paciente 1
+- é do sexo masculino - $x_1=0$
+- não fez cirurgia - $x_2=1$
+- não fez radio - $x_3=1$
+- não fez quimio - $x_4=1$
+- a variável T é categorizado como 1 - $x_5=1$ e $x_6 = x_7 = x_8 = x_9 = x_{10} =0$
+- a variável M é categorizado como 1 - $x_{11}=1$ e $x_{12}=0$
+- a variável N é categorizado como 1 - $x_{13}=1$ e $x_{14} = x_{15} = x_{16} =0$
+
+
+O Paciente 2 é diferente do Paciente 1 devido aos tratamentos, sendo que $x_2=0$, $x_3=0$ e $x_4=0$ . 
+
+
+```{r}
+TEMPO <- seq(1, 2000, 1)
+
+x1 <- c(1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0)
+mu1 <- x1%*% ajuste_31$coefficients
+
+S_1 <- pnorm((- log(TEMPO) + mu1) / ajuste_31$scale ) 
+
+
+x2 <- c(1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0)
+mu2 <- x2%*% ajuste_31$coefficients
+
+S_2 <- pnorm((- log(TEMPO) + mu2) / ajuste_31$scale ) 
+
+
+df_aux <- data.frame(TEMPO = TEMPO, 
+                     Sobre_1= S_1,
+                     Sobre_2= S_2)
+
+ggplot(df_aux, aes(x=TEMPO, y=Sobre_1))+
+  geom_line(col="blue")+
+  geom_line(aes(x=TEMPO, y=Sobre_2), col="red")+
+  ylab("S(t) - estimada")+
+  xlab("Tempo")
+```
+
+Também é possível analisar analiticamente que valor do $\beta$ positivo é um fator que melhora a probabilidade de sobrevivência.
+
+
+Agora, vamos voltar e analisar os pacientes que são classificados como ``Y'' quando utilizamos a TNM. 
+
+
+
+```{r}
+# ajuste dos Y's
+
+dados_y <- dados[dados$T_mod  == "Y", ]
+
+# frequencia da falha
+table(dados_y$Censura)
+
+# analise do tempo de falha
+EKM <- survfit(Surv(TEMPO, Censura)~1, data = dados_y)
+
+ggsurvplot(EKM, 
+           data = dados_y, 
+           ylab="S(t)",
+           xlab="Tempo",
+           title="Tempo de sobrevivencia estimado via K-M",
+           censor.shape=" ",
+           risk.table = T, 
+           risk.table.title="Individuos em risco"
+)
+
+
+# analise das covariaveis
+
+table(dados_y$IDADE)
+table(dados_y$SEXO)
+
+dados_y$Idade_cat <- ifelse(dados_y$IDADE<60, 0, 1)
+table(dados_y$Idade_cat)
+
+table(dados_y$CIRURGIA)
+table(dados_y$RADIO)
+table(dados_y$QUIMIO)
+table(dados_y$EC)
+table(dados_y$ECGRUP)
+
+survreg(Surv(TEMPO,  Censura) ~ Idade_cat, dist='lognormal', dados_y)
+ 
+survreg(Surv(TEMPO,  Censura) ~ SEXO, dist='lognormal', dados_y)
+
+survreg(Surv(TEMPO,  Censura) ~ CIRURGIA, dist='lognormal', dados_y)
+
+survreg(Surv(TEMPO,  Censura) ~ RADIO, dist='lognormal', dados_y)
+
+survreg(Surv(TEMPO,  Censura) ~  QUIMIO, dist='lognormal', dados_y)
+
+# ajuste das covariaveis significativas
+
+ajuste_y <- survreg(Surv(TEMPO,  Censura) ~ Idade_cat + SEXO + CIRURGIA + QUIMIO, dist='lognormal', dados_y)
+
+ajuste_y
+
+EMV <- c(ajuste_y$coefficients, ajuste_y$scale)
+LI <-  c(ajuste_y$coefficients, ajuste_y$scale) -1.96*sqrt(diag(ajuste_y$var))
+LS <-  c(ajuste_y$coefficients, ajuste_y$scale) +1.96*sqrt(diag(ajuste_y$var))
+cbind(EMV, LI, LS)
+
+# ajuste das covariaveis significativas sem idade
+
+ajuste_y_2 <- survreg(Surv(TEMPO,  Censura) ~ SEXO + CIRURGIA + QUIMIO, dist='lognormal', dados_y)
+ajuste_y_2
+
+EMV <- c(ajuste_y_2$coefficients, ajuste_y_2$scale)
+LI <-  c(ajuste_y_2$coefficients, ajuste_y_2$scale) -1.96*sqrt(diag(ajuste_y_2$var))
+LS <-  c(ajuste_y_2$coefficients, ajuste_y_2$scale) +1.96*sqrt(diag(ajuste_y_2$var))
+cbind(EMV, LI, LS)
+
+
+# analise de residuo 
+formula <- as.formula(~ SEXO + CIRURGIA + QUIMIO)
+x <- as.matrix(model.matrix(formula, dados_y))
+
+dim(x)
+
+mu <- x%*% ajuste_y_2$coefficients
+
+residuo <- -log( pnorm((- log(dados_y$TEMPO) + mu) / ajuste_y_2$scale ) )
+
+summary(residuo)
+
+df_residuo <- data.frame(tempo = dados_y$TEMPO,
+                         Residuo = residuo,
+                         cens = dados_y$Censura)
+
+ekm <- survfit(Surv(residuo, cens)~ 1, data= df_residuo)
+
+#summary(ekm)
+
+plot_ekm <- ggsurvplot(ekm, 
+           data = df_residuo, 
+           ylab="S(t) dos residuos",
+           xlab="Residuos",
+           title="",
+           conf.int = F,
+           censor.shape=" ",
+           risk.table = F
+)
+
+plot_ekm
+
+df_residuo$Sobre_res_exp <- exp(-df_residuo$Residuo)
+
+
+plot_exp <- plot_ekm$plot+
+  geom_line(data=df_residuo, aes(x=Residuo, y=Sobre_res_exp), linetype="dashed", linewidth=1.2) 
+
+plot_exp
+
+
+df_residuo2 <- data.frame(ekm = ekm$surv,
+                          t = ekm$time,
+                          sobre_exp1 = exp(-ekm$time))
+
+
+ggplot(df_residuo2, aes(x=ekm, y=sobre_exp1))+
+  geom_point()+
+  ylab("S(t) - Exponencial")+
+  xlab("S(t) - Kaplan-Meier")+
+  geom_abline(aes(intercept=0, slope=1), linewidth=1.1)+
+  ylim(0, 1)+
+  xlim(0, 1)
+
+```
+
+
+Note que o ajuste do modelo log-normal, apenas aos dados com classificação ``Y'' na TNM, não foi excelente. Uma conversa com o pesquisador deverá ser realizada para alinhar os próximos passos. Uma possível solução é a adição de novas covariáveis para explicar o tempo até o desfecho ou a utilização de modelos estatísticos mais robustos (com fração de cura). 

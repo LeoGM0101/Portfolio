@@ -1,0 +1,510 @@
+---
+title: "Relatorio Analise de Sobrevivencia"
+author:
+  - Felipe Melo Sartes
+  - Leonardo Gomes Malaquias
+date: "`r format(Sys.time(), '%d/%m/%Y')`"
+output:
+  pdf_document:
+    keep_tex: yes
+    includes:
+      in_header: header.tex
+---
+```{cat, engine.opts = list(file = "header.tex")}
+//renewcommand{//and}{////}
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, warning=FALSE,}
+rm(list = ls(all = TRUE))
+
+#Bibliotecas necessárias
+library(survival)
+library(survminer)
+library(lubridate)
+library(dplyr)
+library(PerformanceAnalytics)
+```
+
+
+```{r}
+dados <- read.csv("C://Users//leona//Desktop//Trabalho de Análise de Sobrevivencia/BRCA.csv")
+
+#Falha e Patient_Status
+dados$Patient_Status <- ifelse(dados$Patient_Status == "Alive", 0, 1)
+
+#Datas para o formato correto
+dados$Date_of_Surgery <- as.Date(dados$Date_of_Surgery, format = "%d-%b-%y")
+dados$Date_of_Last_Visit <- as.Date(dados$Date_of_Last_Visit, format = "%d-%b-%y")
+```
+
+```{r}
+dados <- dados %>% filter(!is.na(Date_of_Surgery),
+                          !is.na(Date_of_Last_Visit)) #removendo NA's
+#variavel tempo
+dados$tempo <- as.numeric(difftime(dados$Date_of_Last_Visit, 
+                                    dados$Date_of_Surgery, units = "days")) 
+
+```
+
+```{r}
+
+dados_longos0 = tidyr::pivot_longer(dados, cols = c(Age, Protein1, Protein3, Protein3,
+                                                    Protein4,), names_to = "Variavel", values_to = "Valor")
+estatisticas_descritivas = dados_longos0 %>%
+  group_by(Variavel) %>%
+  summarise(Media = mean(Valor),
+            Mediana = median(Valor),
+            Desvio_Padrao = sd(Valor),
+            `IQR` = IQR(Valor),
+            Curtose = kurtosis(Valor),
+            Simetria = skewness(Valor),
+            Minimo = min(Valor),
+            Maximo = max(Valor)); estatisticas_descritivas
+
+
+```
+A variável Age (idade) possui uma média próxima da mediana, apontado para uma distribuição simétrica. O desvio padrão indica uma dispersão moderada em torno da média. O IQR indica uma ampla faixa interquartílica. A curtose negativa indica uma distribuição um pouco mais achatada do que a distribuição normal. A simetria positiva indica uma inclinação para a direita. Os valores mínimo e máximo destacam a amplitude dos dados.
+
+A variável Protein1 possui uma média negativa, indicando que, em média, os valores tendem a ser um pouco menores que zero. A mediana é menor que a média, sugerindo uma distribuição assimétrica para a esquerda. O desvio padrão é moderadamente alto, indicando uma dispersão significativa dos dados em torno da média. O IQR destaca a amplitude da maior parte dos dados. A curtose indica uma distribuição mais concentrada no centro em comparação com uma distribuição normal. A simetria negativa sugere uma inclinação para a esquerda na distribuição.
+
+A variável Protein3 possui uma média positiva, indicando que, em média, os valores são maiores que zero. A mediana é maior que a média, sugerindo uma distribuição assimétrica para a direita. O desvio padrão é moderadamente alto, indicando uma dispersão significativa dos dados em torno da média. O IQR destaca a amplitude da maior parte dos dados. A curtose negativa sugere uma distribuição um pouco mais achatada do que a distribuição normal. A simetria negativa indica uma inclinação para a esquerda na distribuição.
+
+A variável Protein3 possui uma média ligeiramente negativa, indicando que, em média, os valores tendem a ser um pouco menores que zero. A mediana é menor que a média, sugerindo uma distribuição assimétrica para a esquerda. O desvio padrão é moderadamente baixo, indicando uma dispersão menor dos dados em torno da média. O IQR indica a amplitude da maior parte dos dados. A curtose positiva indica uma distribuição mais concentrada no centro em comparação com uma distribuição normal. A simetria positiva sugere uma inclinação para a direita na distribuição.
+
+A variável Protein4 possui uma média e mediana muito próximas de zero, sugerindo uma distribuição simétrica. O desvio padrão é moderadamente alto, indicando uma dispersão significativa dos dados em torno da média. O IQR destaca a amplitude da maior parte dos dados. A curtose indica uma distribuição próxima da normal. A simetria negativa sugere uma inclinação para a esquerda na distribuição.
+
+
+```{r}
+ekm <- survfit(Surv(tempo, Patient_Status) ~ 1, data = dados)
+ggsurvplot(ekm,
+           data = dados, 
+           ylab="S(t)",
+           xlab="tempo (Dias)",
+           censor.shape="",
+           title="", 
+           pval=T
+           )
+
+dados$Gender = ifelse(dados$Gender %in% c("MALE"), 1, 0)
+table(dados$Gender)
+
+dados$ER.status = ifelse(dados$ER.status %in% c("Positive"), 1, 0)
+table(dados$ER.status)
+
+dados$PR.status = ifelse(dados$PR.status %in% c("Positive"), 1, 0)
+table(dados$PR.status)
+
+dados$HER2.status = ifelse(dados$HER2.status %in% c("Positive"), 1, 0)
+table(dados$HER2.status)
+
+# estagio do tumor
+table(dados$Tumour_Stage)
+
+```
+
+
+
+
+## Verificando a Proporcionalidade
+
+### Variável Gender
+
+```{r proporcionalidade Gender, message=FALSE, warning=FALSE, paged.print=FALSE}
+
+## Proporcionalidade dos Genders
+
+mod1 = coxph(Surv(tempo[Gender == 0], Patient_Status[Gender == 0]) ~ 1,
+              data = dados, method = "breslow")
+summary(mod1)
+ss=survfit(mod1)
+H01=-log(ss$surv)
+time1=ss$time
+
+plot(time1, log(H01), type='l', main="time x log(H)", lwd=2, col='blue')
+# lines(time2, log(H02), lty=2, col="red", lwd=2)
+
+```
+
+
+
+
+### Variável Tumour_Stagedade
+
+```{r proporcionalidade Tumour_Stagedade, message=FALSE, warning=FALSE, paged.print=FALSE}
+## Proporcionalidade da Tumour_Stagedade
+
+mod1 = coxph(Surv(tempo[Tumour_Stage == "I"], Patient_Status[Tumour_Stage == "I"]) ~ 1,
+              data = dados, method = "breslow")
+summary(mod1)
+ss=survfit(mod1)
+H01=-log(ss$surv)
+time1=ss$time
+
+mod2 = coxph(Surv(tempo[Tumour_Stage == "II"], Patient_Status[Tumour_Stage == "II"]) ~ 1,
+              data = dados, method = "breslow")
+summary(mod2)
+ss=survfit(mod2)
+H02=-log(ss$surv)
+time2=ss$time
+
+
+mod3 = coxph(Surv(tempo[Tumour_Stage == "III"], Patient_Status[Tumour_Stage == "III"]) ~ 1,
+              data = dados, method = "breslow")
+summary(mod3)
+ss=survfit(mod3)
+H03=-log(ss$surv)
+time3=ss$time
+
+
+
+plot(time1, log(H01), type='l', main="time x log(H)", lwd=2, col='blue')
+lines(time2, log(H02), lty=2, col="red", lwd=2)
+lines(time3, log(H03), lty=3, col="green", lwd=2)
+
+
+```
+
+
+### Variável de Histology
+
+```{r proporcionalidade cirurgia, message=FALSE, warning=FALSE, paged.print=FALSE}
+## Proporcionalidade da Categoria de Histology
+
+mod1 = coxph(Surv(tempo[Histology == "Infiltrating Ductal Carcinoma"], Patient_Status[Histology == "Infiltrating Ductal Carcinoma"]) ~ 1,
+              data = dados, method = "breslow")
+summary(mod1)
+ss=survfit(mod1)
+H01=-log(ss$surv)
+time1=ss$time
+
+mod2 = coxph(Surv(tempo[Histology == "Infiltrating Lobular Carcinoma"], Patient_Status[Histology == "Infiltrating Lobular Carcinoma"]) ~ 1,
+              data = dados, method = "breslow")
+summary(mod2)
+ss=survfit(mod2)
+H02=-log(ss$surv)
+time2=ss$time
+
+mod3 = coxph(Surv(tempo[Histology == "Mucinous Carcinoma"], Patient_Status[Histology == "Mucinous Carcinoma"]) ~ 1,
+              data = dados, method = "breslow")
+summary(mod3)
+ss=survfit(mod3)
+H03=-log(ss$surv)
+time3=ss$time
+
+
+plot(time1, log(H01), type='l', main="time x log(H)", lwd=2, col='blue')
+lines(time2, log(H02), lty=2, col="red", lwd=2)
+lines(time3, log(H03), lty=3, col="green", lwd=2)
+
+
+```
+
+
+
+### Variável ER.status
+
+```{r proporcionalidade tratamentos, message=FALSE, warning=FALSE, paged.print=FALSE}
+## Proporcionalidade dos ER.status
+
+mod1 = coxph(Surv(tempo[ER.status == 1], Patient_Status[ER.status == 1]) ~ 1,
+              data = dados, method = "breslow")
+summary(mod1)
+ss=survfit(mod1)
+H01=-log(ss$surv)
+time1=ss$time
+
+
+
+plot(time1, log(H01), type='l', main="time x log(H)", lwd=2, col='blue')
+
+
+```
+
+
+
+
+
+### Variável PR.status
+
+```{r proporcionalidade tratamentos, message=FALSE, warning=FALSE, paged.print=FALSE}
+## Proporcionalidade dos PR.status
+
+mod1 = coxph(Surv(tempo[PR.status == 1], Patient_Status[PR.status == 1]) ~ 1,
+              data = dados, method = "breslow")
+summary(mod1)
+ss=survfit(mod1)
+H01=-log(ss$surv)
+time1=ss$time
+
+
+
+plot(time1, log(H01), type='l', main="time x log(H)", lwd=2, col='blue')
+
+
+```
+
+
+
+
+
+### Variável  HER2.status
+
+```{r proporcionalidade tratamentos, message=FALSE, warning=FALSE, paged.print=FALSE}
+## Proporcionalidade dos  HER2.status
+
+mod1 = coxph(Surv(tempo[ HER2.status == 1], Patient_Status[ HER2.status == 1]) ~ 1,
+              data = dados, method = "breslow")
+summary(mod1)
+ss=survfit(mod1)
+H01=-log(ss$surv)
+time1=ss$time
+
+mod2 = coxph(Surv(tempo[ HER2.status == 0], Patient_Status[ HER2.status == 0]) ~ 1,
+              data = dados, method = "breslow")
+summary(mod2)
+ss=survfit(mod2)
+H02=-log(ss$surv)
+time2=ss$time
+
+
+
+plot(time1, log(H01), type='l', main="time x log(H)", lwd=2, col='blue')
+lines(time2, log(H02), lty=2, col="red", lwd=2)
+
+
+```
+
+
+
+### Variável Surgery_type
+
+```{r proporcionalidade Tumour_Stagedade, message=FALSE, warning=FALSE, paged.print=FALSE}
+## Proporcionalidade da Surgery_type
+
+mod1 = coxph(Surv(tempo[Surgery_type == "Lumpectomy"], Patient_Status[Surgery_type == "Lumpectomy"]) ~ 1,
+              data = dados, method = "breslow")
+summary(mod1)
+ss=survfit(mod1)
+H01=-log(ss$surv)
+time1=ss$time
+
+mod2 = coxph(Surv(tempo[Surgery_type == "Modified Radical Mastectomy"], Patient_Status[Surgery_type == "Modified Radical Mastectomy"]) ~ 1,
+              data = dados, method = "breslow")
+summary(mod2)
+ss=survfit(mod2)
+H02=-log(ss$surv)
+time2=ss$time
+
+
+mod3 = coxph(Surv(tempo[Surgery_type == "Simple Mastectomy"], Patient_Status[Surgery_type == "Simple Mastectomy"]) ~ 1,
+              data = dados, method = "breslow")
+summary(mod3)
+ss=survfit(mod3)
+H03=-log(ss$surv)
+time3=ss$time
+
+
+mod4 = coxph(Surv(tempo[Surgery_type == "Other"], Patient_Status[Surgery_type == "Other"]) ~ 1,
+              data = dados, method = "breslow")
+summary(mod4)
+ss=survfit(mod4)
+H04=-log(ss$surv)
+time4=ss$time
+
+
+
+plot(time1, log(H01), type='l', main="time x log(H)", lwd=2, col='blue')
+lines(time2, log(H02), lty=2, col="red", lwd=2)
+lines(time3, log(H03), lty=3, col="green", lwd=2)
+
+
+```
+
+
+
+### Variável Idade
+
+```{r proporcionalidade Age, message=FALSE, warning=FALSE, paged.print=FALSE}
+# grafico para a variavel Age - usando o valor mediano
+
+md = median(dados$Age)
+
+dados$Age_ <- ifelse(dados$Age<=md, 0, 1)
+
+table(dados$Age_)
+
+
+# grafico para a variavel idade categorica
+
+mod1 <- coxph(Surv(tempo[Age_==0],Patient_Status[Age_==0])~1,
+              data=dados,method="breslow")
+summary(mod1)
+ss=survfit(mod1)
+s0=round(ss$surv,3)
+H01=-log(s0)
+time1=ss$time
+
+mod2 <- coxph(Surv(tempo[Age_==1],Patient_Status[Age_==1])~1,
+              data=dados,method="breslow")
+summary(mod2)
+ss=survfit(mod2)
+s0=round(ss$surv,3)
+H02=-log(s0)
+time2=ss$time
+
+plot(time1, log(H01), type='l', ylim=c(-4, 1), lwd=2)
+lines(time2, log(H02), lty=2, col="red", lwd=2)
+
+```
+
+
+### Variável Protein1
+
+```{r proporcionalidade Protein1, message=FALSE, warning=FALSE, paged.print=FALSE}
+# grafico para a variavel Protein1 - usando o valor mediano
+
+md = median(dados$Protein1)
+
+dados$Protein1_ <- ifelse(dados$Protein1<=md, 0, 1)
+
+table(dados$Protein1_)
+
+
+# grafico para a variavel idade categorica
+
+mod1 <- coxph(Surv(tempo[Protein1_==0],Patient_Status[Protein1_==0])~1,
+              data=dados,method="breslow")
+summary(mod1)
+ss=survfit(mod1)
+s0=round(ss$surv,3)
+H01=-log(s0)
+time1=ss$time
+
+mod2 <- coxph(Surv(tempo[Protein1_==1],Patient_Status[Protein1_==1])~1,
+              data=dados,method="breslow")
+summary(mod2)
+ss=survfit(mod2)
+s0=round(ss$surv,3)
+H02=-log(s0)
+time2=ss$time
+
+plot(time1, log(H01), type='l', ylim=c(-4, 1), lwd=2)
+lines(time2, log(H02), lty=2, col="red", lwd=2)
+
+```
+
+
+### Variável Protein2
+
+```{r proporcionalidade Protein2, message=FALSE, warning=FALSE, paged.print=FALSE}
+# grafico para a variavel Protein2 - usando o valor mediano
+
+md = median(dados$Protein2)
+
+dados$Protein2_ <- ifelse(dados$Protein2<=md, 0, 1)
+
+table(dados$Protein2_)
+
+
+# grafico para a variavel idade categorica
+
+mod1 <- coxph(Surv(tempo[Protein2_==0],Patient_Status[Protein2_==0])~1,
+              data=dados,method="breslow")
+summary(mod1)
+ss=survfit(mod1)
+s0=round(ss$surv,3)
+H01=-log(s0)
+time1=ss$time
+
+mod2 <- coxph(Surv(tempo[Protein2_==1],Patient_Status[Protein2_==1])~1,
+              data=dados,method="breslow")
+summary(mod2)
+ss=survfit(mod2)
+s0=round(ss$surv,3)
+H02=-log(s0)
+time2=ss$time
+
+plot(time1, log(H01), type='l', ylim=c(-4, 1), lwd=2)
+lines(time2, log(H02), lty=2, col="red", lwd=2)
+
+```
+
+
+### Variável Protein3
+
+```{r proporcionalidade Protein3, message=FALSE, warning=FALSE, paged.print=FALSE}
+# grafico para a variavel Protein3 - usando o valor mediano
+
+md = median(dados$Protein3)
+
+dados$Protein3_ <- ifelse(dados$Protein3<=md, 0, 1)
+
+table(dados$Protein3_)
+
+
+# grafico para a variavel idade categorica
+
+mod1 <- coxph(Surv(tempo[Protein3_==0],Patient_Status[Protein3_==0])~1,
+              data=dados,method="breslow")
+summary(mod1)
+ss=survfit(mod1)
+s0=round(ss$surv,3)
+H01=-log(s0)
+time1=ss$time
+
+mod2 <- coxph(Surv(tempo[Protein3_==1],Patient_Status[Protein3_==1])~1,
+              data=dados,method="breslow")
+summary(mod2)
+ss=survfit(mod2)
+s0=round(ss$surv,3)
+H02=-log(s0)
+time2=ss$time
+
+plot(time1, log(H01), type='l', ylim=c(-4, 1), lwd=2)
+lines(time2, log(H02), lty=2, col="red", lwd=2)
+
+```
+
+
+
+
+### Variável Protein4
+
+```{r proporcionalidade Protein4, message=FALSE, warning=FALSE, paged.print=FALSE}
+# grafico para a variavel Protein4 - usando o valor mediano
+
+md = median(dados$Protein4)
+
+dados$Protein4_ <- ifelse(dados$Protein4<=md, 0, 1)
+
+table(dados$Protein4_)
+
+
+# grafico para a variavel idade categorica
+
+mod1 <- coxph(Surv(tempo[Protein4_==0],Patient_Status[Protein4_==0])~1,
+              data=dados,method="breslow")
+summary(mod1)
+ss=survfit(mod1)
+s0=round(ss$surv,3)
+H01=-log(s0)
+time1=ss$time
+
+mod2 <- coxph(Surv(tempo[Protein4_==1],Patient_Status[Protein4_==1])~1,
+              data=dados,method="breslow")
+summary(mod2)
+ss=survfit(mod2)
+s0=round(ss$surv,3)
+H02=-log(s0)
+time2=ss$time
+
+plot(time1, log(H01), type='l', ylim=c(-4, 1), lwd=2)
+lines(time2, log(H02), lty=2, col="red", lwd=2)
+
+```
+
+

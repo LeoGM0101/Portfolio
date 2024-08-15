@@ -1,0 +1,1147 @@
+---
+title: "Untitled"
+author: "Leonardo Gomes Malaquias"
+date: "2024-01-31"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE, warning=FALSE}
+rm(list = ls(all = TRUE))
+
+#Bibliotecas necessárias
+library(survival)
+library(survminer)
+library(flexsurv)
+library(lubridate)
+library(dplyr)
+library(PerformanceAnalytics)
+library(gridExtra)
+
+dados <- read.csv('cirrhosis.csv')
+dados = na.omit(dados)
+dados$Status = ifelse(dados$Status %in% c("C", "CL"), 0, 1)
+dados$Spiders = ifelse(dados$Spiders %in% "N", 0, 1)
+dados$Edema = ifelse(dados$Edema %in% "N", 0, 1)
+dados$Hepatomegaly = ifelse(dados$Hepatomegaly %in% "N", 0, 1)
+dados$Ascites =  ifelse(dados$Ascites %in% c("N","NA"), 0, 1)
+dados$Age_ = round(dados$Age, 1)
+attach(dados)
+
+```
+# Introdução
+A cirrose hepática é uma condição crônica grave que afeta milhões de pessoas em todo o mundo, com consequências significativas para a saúde pública. Neste relatório, exploraremos um conjunto de dados relacionado a pacientes com cirrose hepática, coletados durante um ensaio clínico realizado entre 1974 e 1984.
+
+Além de examinar as características clínicas e demográficas dos pacientes, estamos interessados em entender melhor os padrões de sobrevivência nessa população. A análise de sobrevivência, uma ferramenta estatística fundamental, nos permite investigar o tempo até a ocorrência de eventos de interesse, como mortalidade ou progressão da doença, e identificar fatores que podem influenciar esses desfechos.
+
+Ao aplicarmos a análise de sobrevivência a esses dados, esperamos obter insights valiosos sobre a trajetória da doença, os fatores prognósticos e a eficácia de intervenções terapêuticas. Dessa forma, podemos contribuir para o desenvolvimento de estratégias mais eficazes de manejo clínico e melhoria dos resultados de saúde para pacientes com cirrose hepática.
+
+## Análise Descritiva
+
+```{r Analise Descritiva 1, message=FALSE, warning=FALSE, paged.print=FALSE}
+
+dados_longos0 = tidyr::pivot_longer(dados, cols = c(Age_, Bilirubin, Cholesterol, Albumin, Copper, Alk_Phos, SGOT, Tryglicerides), names_to = "Variavel", values_to = "Valor")
+estatisticas_descritivas = dados_longos0 %>%
+  group_by(Variavel) %>%
+  summarise(Media = mean(Valor),
+            Mediana = median(Valor),
+            Desvio_Padrao = sd(Valor),
+            `IQR` = IQR(Valor),
+            Curtose = kurtosis(Valor),
+            Simetria = skewness(Valor),
+            Minimo = min(Valor),
+            Maximo = max(Valor)); estatisticas_descritivas
+```
+
+Os dados fornecem uma visão abrangente das características dos pacientes com cirrose hepática. Em geral, a idade média dos pacientes é de aproximadamente 18 anos, com uma mediana próxima a essa média (18.156 anos pra ser mais exato, que podemos considerar como iguais), sugerindo uma distribuição relativamente simétrica das idades. No entanto, a dispersão dos dados em torno dessa média é moderada, como indicado pelo desvio padrão de 3.844.
+
+Quanto aos marcadores bioquímicos, como albumina, bilirrubina, colesterol e triglicerídeos, observamos uma variação considerável em seus valores médios e medianos. Por exemplo, a albumina apresenta uma média de 3.52 e uma mediana de 3.54, o que sugere uma distribuição simétrica em torno da média. No entanto, a bilirrubina mostra uma diferença significativa entre a média (3.33) e a mediana (1.4), indicando uma possível assimetria nos dados.
+
+Além disso, a curtose e a simetria fornecem informações sobre a forma da distribuição dos dados. Uma curtose positiva sugere uma distribuição mais pontiaguda em relação à distribuição normal, enquanto uma curtose negativa indica uma distribuição mais achatada. Quanto à simetria, valores positivos indicam uma assimetria para a direita, enquanto valores negativos indicam uma assimetria para a esquerda.
+
+Em resumo, essas estatísticas resumidas destacam a variabilidade nos dados relacionados à cirrose hepática e sugerem possíveis tendências na distribuição das características clínicas e biomarcadores entre os pacientes estudados.
+
+
+```{r}
+SurvObj = Surv(N_Days,Status)
+
+fit_km <- survfit(SurvObj ~ 1, data = dados)
+ggsurvplot(fit_km,
+           data = dados, 
+           ylab="S(t)",
+           xlab="N_Days (Dias)",
+           censor.shape="",
+           title="", 
+           pval=T)
+
+dados$Sex = ifelse(dados$Sex == "F", 0, 1)
+```
+Analisando a curva nota-se que durante todo o periodo do estudo clinico não houveram pacientes
+que atigiram valores menores que 25% de sobrevivencia, indicando que talvez seria necessario mais
+tempo de observação, veremos agora o que pode retardar a morte do individuo.  
+
+## Verificando a Proporcionalidade de Cada Variavel
+
+* Variável Medicação
+
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+
+## Proporcionalidade de Drug
+
+mod1 = coxph(Surv(N_Days[Drug == "D-penicillamine"], Status[Drug == "D-penicillamine"]) ~ 1, data = dados, method = "breslow")
+summary(mod1)
+ss=survfit(mod1)
+H01=-log(ss$surv)
+time1=ss$time
+
+mod2 = coxph(Surv(N_Days[Drug == "Placebo"], Status[Drug == "Placebo"]) ~ 1, data = dados, method = "breslow")
+summary(mod2)
+ss=survfit(mod2)
+H02=-log(ss$surv)
+time2=ss$time
+
+
+plot(time1, log(H01), type='l', main="time x log(H)", lwd=2, col='blue')
+lines(time2, log(H02), lty=2, col="red", lwd=2)
+ggsurvplot(survfit(SurvObj ~ Drug, dados))
+
+```
+
+* Variável Sexo
+
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+
+## Proporcionalidade de Sex
+
+mod1 = coxph(Surv(N_Days[Sex == 0], Status[Sex == 0]) ~ 1, data = dados, method = "breslow")
+summary(mod1)
+ss=survfit(mod1)
+H01=-log(ss$surv)
+time1=ss$time
+
+mod2 = coxph(Surv(N_Days[Sex == 1], Status[Sex == 1]) ~ 1, data = dados, method = "breslow")
+summary(mod2)
+ss=survfit(mod2)
+H02=-log(ss$surv)
+time2=ss$time
+
+plot(time1, log(H01), type='l', main="time x log(H)", lwd=2, col='blue')
+lines(time2, log(H02), lty=2, col="red", lwd=2)
+ggsurvplot(survfit(SurvObj ~ Sex, dados))
+```
+
+* Variável Ascites
+
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+
+## Proporcionalidade dos Ascites
+
+mod1 = coxph(Surv(N_Days[Ascites == 0], Status[Ascites == 0]) ~ 1, data = dados, method = "breslow")
+summary(mod1)
+ss=survfit(mod1)
+H01=-log(ss$surv)
+time1=ss$time
+
+mod2 = coxph(Surv(N_Days[Ascites == 1], Status[Ascites == 1]) ~ 1, data = dados, method = "breslow")
+summary(mod2)
+ss=survfit(mod2)
+H02=-log(ss$surv)
+time2=ss$time
+
+plot(time1, log(H01), type='l', main="time x log(H)", lwd=2, col='blue')
+lines(time2, log(H02), lty=2, col="red", lwd=2)
+ggsurvplot(survfit(SurvObj ~Ascites,dados))
+
+```
+
+
+
+### Variável Hepatomegalia
+
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+
+## Proporcionalidade dos Hepatomegaly
+
+mod1 = coxph(Surv(N_Days[Hepatomegaly == 0], Status[Hepatomegaly == 0]) ~ 1, data = dados, method = "breslow")
+summary(mod1)
+ss=survfit(mod1)
+H01=-log(ss$surv)
+time1=ss$time
+
+mod2 = coxph(Surv(N_Days[Hepatomegaly == 1], Status[Hepatomegaly == 1]) ~ 1, data = dados, method = "breslow")
+summary(mod2)
+ss=survfit(mod2)
+H02=-log(ss$surv)
+time2=ss$time
+
+plot(time1, log(H01), type='l', main="time x log(H)", lwd=2, col='blue')
+lines(time2, log(H02), lty=2, col="red", lwd=2)
+ggsurvplot(survfit(SurvObj ~ Hepatomegaly,dados))
+```
+
+### Ajuste do Modelo de Cox para todas as covariáveis
+
+```{r ajuste todas cov, message=FALSE, warning=FALSE, paged.print=FALSE}
+SurvObj = Surv(N_Days,Status)
+
+cox_todas = coxph(SurvObj ~ Drug + Age + Sex + Ascites + Hepatomegaly + Spiders + Edema + Bilirubin + Cholesterol + Albumin + Copper + Alk_Phos + SGOT + Tryglicerides + Platelets + Prothrombin + Stage, x=T, method = "breslow")
+
+anova(cox_todas)
+summary(cox_todas)
+cox_todas$loglik
+
+plot(cox.zph(cox_todas, transform = "identity", terms=T))
+cox.zph(cox_todas, transform = "identity")
+```
+
+Logo tanto pela análise gráfica quanto o teste recusamo a hipotese da dados proporcionais
+de modo que o modelo de cox nao poderá ser usado para este estudo.
+a alternativa agora remete a modelarmos de modo parametrico o pode ocasionar em resultados contraditorios pois a origem dos dados podem ser oriundas de uma distribuiçâo desconhecida mesmo que modelemos ela entre as enumeradas para análises de sobrevivência.
+
+## Aplicando a Modelagem Paramétrica
+
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+SurvObj = Surv(N_Days,Status)
+
+mod_exp = flexsurvreg(SurvObj ~ 1, dist='exp', data = dados)
+mod_exp$AIC
+mod_weib = flexsurvreg(SurvObj ~ 1, dist='weibull', data = dados)
+mod_weib$AIC
+mod_lognorm = flexsurvreg(SurvObj ~ 1, dist='lognormal', data = dados)
+mod_lognorm$AIC
+mod_loglogi = flexsurvreg(SurvObj ~ 1, dist = 'llog', data = dados)
+mod_loglogi$AIC
+mod_gam = flexsurvreg(SurvObj ~ 1, dist = 'gamma', data = dados)
+mod_gam$AIC
+
+# O modelo weibul apresenta o menor AIC
+
+ekm = survfit(SurvObj ~ 1, data=dados)
+
+alpha_weib = mod_weib$res[2]
+gama_weib = mod_weib$res[1]
+
+fun_weib = function(t){exp(-(t/alpha_weib)^gama_weib)}
+
+df_ajuste_norm <- data.frame(N_Days = ekm$time, 
+                                  KM = ekm$surv,
+                                  Wei = fun_weib(ekm$time))
+
+ggplot(df_ajuste_norm, aes(x = KM, y = Wei))+
+  geom_point()+
+  ylab("S(t) - Log-normal")+
+  xlab("S(t) - Kaplan-Meier")+
+  geom_abline(aes(intercept=0, slope=1), linewidth=1.1)+
+  ylim(0, 1)+
+  xlim(0, 1)
+
+
+```
+
+
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+alpha_exp = 1/mod_exp$res[1]
+
+mu = mod_lognorm$res[1]
+sigma = mod_lognorm$res[2]
+
+alpha_llogi = mod_loglogi$res[2]
+gama_llogi = mod_loglogi$res[1]
+
+alpha_gama = mod_gam$res[1]
+beta_gama = mod_gam$res[2]
+
+fun_norm = function(t){pnorm((-log(t)+mu)/sigma)}
+
+fun_exp = function(t){exp(-t/alpha_exp)}
+
+fun_logl = function(t){1/(1+ (t/alpha_llogi)^gama_llogi)}
+
+fun_gam = function(t) {1 - pgamma(t, shape = alpha_gama, rate = beta_gama) }
+
+
+
+sobrev_df = data.frame(Tempos = ekm$time,
+                        KM = round(ekm$surv, 4),
+                        Exp = round(fun_exp(ekm$time), 4),
+                        Weib = round(fun_norm(ekm$time), 4),
+                        Logl = round(fun_logl(ekm$time), 4),
+                        Gama = round(fun_gam(ekm$time), 4))
+
+ggplot(data = sobrev_df, mapping = aes(x = KM)) +
+    geom_point(aes(y = Exp, color = 'Exp')) +
+    geom_point(aes(y = Weib, color = 'Nrom')) +
+    geom_point(aes(y = Logl, color = 'Logl')) +
+    geom_point(aes(y = Gama, color = 'Gama')) +
+    geom_abline(aes(intercept=0, slope=1), linewidth=0.8) +
+    ylab("S(t) - modelos paramEtricos") + xlab("S(t) - Kaplan-Meier") +
+    ylim(0, 1) + xlim(0, 1)
+
+```
+
+## Ajuste do Modelo Weibul
+
+### Ajuste para cada covariável
+
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+SurvObj = Surv(N_Days,Status)
+
+
+fit1 = survreg(SurvObj ~ Drug, data = dados, dist = "weibull")
+fit1
+fit1$loglik
+
+fit2 = survreg(SurvObj ~ Age, data = dados, dist = "weibull")
+fit2
+fit2$loglik
+
+fit3 = survreg(SurvObj ~ Sex, data = dados, dist = "weibull")
+fit3
+fit3$loglik
+
+fit4 = survreg(SurvObj ~ Ascites, data = dados, dist = "weibull")
+fit4
+fit4$loglik
+
+fit5 = survreg(SurvObj ~ Hepatomegaly, data = dados, dist = "weibull")
+fit5
+fit5$loglik
+
+fit6 = survreg(SurvObj ~ Spiders, data = dados, dist = "weibull")
+fit6
+fit6$loglik
+
+fit7 = survreg(SurvObj ~ Edema, data = dados, dist = "weibull")
+fit7
+fit7$loglik
+
+fit8 = survreg(SurvObj ~ Bilirubin, data = dados, dist = "weibull")
+fit8
+fit8$loglik
+
+fit9 = survreg(SurvObj ~ Cholesterol, data = dados, dist = "weibull")
+fit9
+fit9$loglik
+
+fit10 = survreg(SurvObj ~ Albumin, data = dados, dist = "weibull")
+fit10
+fit10$loglik
+
+fit11 = survreg(SurvObj ~ Copper, data = dados, dist = "weibull")
+fit11
+fit11$loglik
+
+fit12 = survreg(SurvObj ~ Alk_Phos, data = dados, dist = "weibull")
+fit12
+fit12$loglik
+
+fit13 = survreg(SurvObj ~ SGOT, data = dados, dist = "weibull")
+fit13
+fit13$loglik
+
+fit14 = survreg(SurvObj ~ Tryglicerides, data = dados, dist = "weibull")
+fit14
+fit14$loglik
+
+fit15 = survreg(SurvObj ~ Platelets, data = dados, dist = "weibull")
+fit15
+fit15$loglik
+
+fit16 = survreg(SurvObj ~ Prothrombin, data = dados, dist = "weibull")
+fit16
+fit16$loglik
+
+fit17 = survreg(SurvObj ~ Stage, data = dados, dist = "weibull")
+fit17
+fit17$loglik
+
+```
+
+
+## Ajuste do Modelo Weibul
+
+
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+#Considerando todas as variaveis
+SurvObj = Surv(N_Days,Status)
+
+weibul_todas = survreg(SurvObj ~ Drug + Age + Sex + Ascites + Hepatomegaly + Spiders + Edema + Bilirubin + Cholesterol + Albumin + Copper + Alk_Phos + SGOT + Tryglicerides + Platelets + Prothrombin + Stage, data = dados, dist = "weibull")
+
+anova(weibul_todas, test = "Chisq")
+summary(weibul_todas)
+
+```
+
+
+### Resíduos de Cox-Snell - Modelo Weibul 1
+
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+#Residuos considerando o modelo comleto
+
+formula <- as.formula(~ Drug + Age + Sex + Ascites + Hepatomegaly + Spiders + Edema + Bilirubin + Cholesterol + Albumin + Copper + Alk_Phos + SGOT + Tryglicerides + Platelets + Prothrombin + Stage)
+x <- as.matrix(model.matrix(formula, dados))
+dim(x)
+
+mu <- x%*% weibul_todas$coefficients
+
+residuo <- -log( pnorm((- log(dados$N_Days) + mu) / weibul_todas$scale ) )
+
+summary(residuo)
+
+df_residuo <- data.frame(Tempo = dados$N_Days,
+                         Residuo = residuo,
+                         cens = dados$Status)
+ekm <- survfit(Surv(residuo, cens)~ 1, data= df_residuo)
+
+#summary(ekm)
+
+plot_ekm <- ggsurvplot(ekm, 
+           data = df_residuo, 
+           ylab="S(t) dos residuos",
+           xlab="Residuos",
+           title="",
+           conf.int = F,
+           censor.shape=" ",
+           risk.table = F
+)
+
+plot_ekm
+
+df_residuo$Sobre_res_exp <- exp(-df_residuo$Residuo)
+
+
+plot_exp <- plot_ekm$plot+
+  geom_line(data=df_residuo, aes(x=Residuo, y=Sobre_res_exp), linetype="dashed", linewidth=1.2) 
+
+plot_exp
+
+
+df_residuo2 <- data.frame(ekm = ekm$surv,
+                          t = ekm$time,
+                          sobre_exp1 = exp(-ekm$time))
+
+
+ggplot(df_residuo2, aes(x=ekm, y=sobre_exp1))+
+  geom_point()+
+  ylab("S(t) - Exponencial")+
+  xlab("S(t) - Kaplan-Meier")+
+  geom_abline(aes(intercept=0, slope=1), linewidth=1.1)+
+  ylim(0, 1)+
+  xlim(0, 1)
+
+```
+
+
+
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+#Ajuste pela weibull
+SurvObj = Surv(N_Days,Status)
+
+ajuste_weibul = survreg(SurvObj ~ Age + Ascites + Hepatomegaly + Bilirubin + Albumin + Copper + Prothrombin + Stage, data = dados, dist = "weibull")
+
+anova(ajuste_weibul, test = "Chisq")
+summary(ajuste_weibul)
+
+```
+
+### Resíduos de Cox-Snell - Modelo Weibul 2
+
+```{r , message=FALSE, warning=FALSE, paged.print=FALSE}
+#Residuos cox snell considerando as significativas
+formula <- as.formula(~ Age + Ascites + Hepatomegaly + Bilirubin + Albumin + Copper + Prothrombin + Stage)
+x <- as.matrix(model.matrix(formula, dados))
+dim(x)
+
+mu <- x%*% ajuste_weibul$coefficients
+
+residuo <- -log( pnorm((- log(dados$N_Days) + mu) / ajuste_weibul$scale ) )
+
+summary(residuo)
+
+df_residuo <- data.frame(N_Days = dados$N_Days,
+                         Residuo = residuo,
+                         cens = dados$Status)
+
+ekm <- survfit(Surv(residuo, cens)~ 1, data= df_residuo)
+
+#summary(ekm)
+
+plot_ekm <- ggsurvplot(ekm, 
+           data = df_residuo, 
+           ylab="S(t) dos residuos",
+           xlab="Residuos",
+           title="",
+           conf.int = F,
+           censor.shape=" ",
+           risk.table = F
+)
+
+plot_ekm
+
+df_residuo$Sobre_res_exp <- exp(-df_residuo$Residuo)
+
+
+plot_exp <- plot_ekm$plot+
+  geom_line(data=df_residuo, aes(x=Residuo, y=Sobre_res_exp), linetype="dashed", linewidth=1.2) 
+
+plot_exp
+
+
+df_residuo2 <- data.frame(ekm = ekm$surv,
+                          t = ekm$time,
+                          sobre_exp1 = exp(-ekm$time))
+
+
+ggplot(df_residuo2, aes(x=ekm, y=sobre_exp1))+
+  geom_point()+
+  ylab("S(t) - Exponencial")+
+  xlab("S(t) - Kaplan-Meier")+
+  geom_abline(aes(intercept=0, slope=1), linewidth=1.1)+
+  ylim(0, 1)+
+  xlim(0, 1)
+
+```
+
+
+
+
+## Ajuste do Modelo Log Normal
+
+### Ajuste para cada covariável
+
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+SurvObj = Surv(N_Days,Status)
+
+
+fit1 = survreg(SurvObj ~ Drug, data = dados, dist = "lognormal")
+fit1
+fit1$loglik
+
+fit2 = survreg(SurvObj ~ Age, data = dados, dist = "lognormal")
+fit2
+fit2$loglik
+
+fit3 = survreg(SurvObj ~ Sex, data = dados, dist = "lognormal")
+fit3
+fit3$loglik
+
+fit4 = survreg(SurvObj ~ Ascites, data = dados, dist = "lognormal")
+fit4
+fit4$loglik
+
+fit5 = survreg(SurvObj ~ Hepatomegaly, data = dados, dist = "lognormal")
+fit5
+fit5$loglik
+
+fit6 = survreg(SurvObj ~ Spiders, data = dados, dist = "lognormal")
+fit6
+fit6$loglik
+
+fit7 = survreg(SurvObj ~ Edema, data = dados, dist = "lognormal")
+fit7
+fit7$loglik
+
+fit8 = survreg(SurvObj ~ Bilirubin, data = dados, dist = "lognormal")
+fit8
+fit8$loglik
+
+fit9 = survreg(SurvObj ~ Cholesterol, data = dados, dist = "lognormal")
+fit9
+fit9$loglik
+
+fit10 = survreg(SurvObj ~ Albumin, data = dados, dist = "lognormal")
+fit10
+fit10$loglik
+
+fit11 = survreg(SurvObj ~ Copper, data = dados, dist = "lognormal")
+fit11
+fit11$loglik
+
+fit12 = survreg(SurvObj ~ Alk_Phos, data = dados, dist = "lognormal")
+fit12
+fit12$loglik
+
+fit13 = survreg(SurvObj ~ SGOT, data = dados, dist = "lognormal")
+fit13
+fit13$loglik
+
+fit14 = survreg(SurvObj ~ Tryglicerides, data = dados, dist = "lognormal")
+fit14
+fit14$loglik
+
+fit15 = survreg(SurvObj ~ Platelets, data = dados, dist = "lognormal")
+fit15
+fit15$loglik
+
+fit16 = survreg(SurvObj ~ Prothrombin, data = dados, dist = "lognormal")
+fit16
+fit16$loglik
+
+fit17 = survreg(SurvObj ~ Stage, data = dados, dist = "lognormal")
+fit17
+fit17$loglik
+
+```
+
+
+
+
+
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+#modelo log normal
+SurvObj = Surv(N_Days,Status)
+
+lognormal_todas = survreg(SurvObj ~ Drug + Age + Sex + Ascites + Hepatomegaly + Spiders + Edema + Bilirubin + Cholesterol + Albumin + Copper + Alk_Phos + SGOT + Tryglicerides + Platelets + Prothrombin + Stage, data = dados, dist = "lognormal")
+
+anova(lognormal_todas, test = "Chisq")
+summary(lognormal_todas)
+
+```
+
+
+
+
+
+### Resíduos de Cox-Snell - Modelo Lognormal 1
+
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+#Cox snell para log normal
+formula <- as.formula(~ Drug + Age + Sex + Ascites + Hepatomegaly + Spiders + Edema + Bilirubin + Cholesterol + Albumin + Copper + Alk_Phos + SGOT + Tryglicerides + Platelets + Prothrombin + Stage)
+x <- as.matrix(model.matrix(formula, dados))
+dim(x)
+
+mu <- x%*% lognormal_todas$coefficients
+
+residuo <- -log( pnorm((- log(dados$N_Days) + mu) / lognormal_todas$scale ) )
+
+summary(residuo)
+
+df_residuo <- data.frame(N_Days = dados$N_Days,
+                         Residuo = residuo,
+                         cens = dados$Status)
+
+ekm <- survfit(Surv(residuo, cens)~ 1, data= df_residuo)
+
+#summary(ekm)
+
+plot_ekm <- ggsurvplot(ekm, 
+           data = df_residuo, 
+           ylab="S(t) dos residuos",
+           xlab="Residuos",
+           title="",
+           conf.int = F,
+           censor.shape=" ",
+           risk.table = F
+)
+
+plot_ekm
+
+df_residuo$Sobre_res_exp <- exp(-df_residuo$Residuo)
+
+
+plot_exp <- plot_ekm$plot+
+  geom_line(data=df_residuo, aes(x=Residuo, y=Sobre_res_exp), linetype="dashed", linewidth=1.2) 
+
+plot_exp
+
+
+df_residuo2 <- data.frame(ekm = ekm$surv,
+                          t = ekm$time,
+                          sobre_exp1 = exp(-ekm$time))
+
+
+ggplot(df_residuo2, aes(x=ekm, y=sobre_exp1))+
+  geom_point()+
+  ylab("S(t) - Exponencial")+
+  xlab("S(t) - Kaplan-Meier")+
+  geom_abline(aes(intercept=0, slope=1), linewidth=1.1)+
+  ylim(0, 1)+
+  xlim(0, 1)
+
+```
+
+
+
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+#ajuste para lognormal - variaveis significativas 
+SurvObj = Surv(N_Days,Status)
+
+lognormal_ajuste = survreg(SurvObj ~ Age + Ascites + Hepatomegaly + Bilirubin + Albumin + Copper + SGOT + Prothrombin + Stage, data = dados, dist = "lognormal")
+
+anova(lognormal_ajuste, test = "Chisq")
+summary(lognormal_ajuste)
+
+```
+
+
+### Resíduos de Cox-Snell - Modelo Lognormal 2
+
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+#Residuos cox snell log normal considerando significativas
+formula <- as.formula(~ Age + Ascites + Hepatomegaly + Bilirubin + Albumin + Copper + SGOT + Prothrombin + Stage)
+x <- as.matrix(model.matrix(formula, dados))
+dim(x)
+
+mu <- x%*% lognormal_ajuste$coefficients
+
+residuo <- -log( pnorm((- log(dados$N_Days) + mu) / lognormal_ajuste$scale ) )
+
+summary(residuo)
+
+df_residuo <- data.frame(N_Days = dados$N_Days,
+                         Residuo = residuo,
+                         cens = dados$Status)
+
+ekm <- survfit(Surv(residuo, cens)~ 1, data= df_residuo)
+
+#summary(ekm)
+
+plot_ekm <- ggsurvplot(ekm, 
+           data = df_residuo, 
+           ylab="S(t) dos residuos",
+           xlab="Residuos",
+           title="",
+           conf.int = F,
+           censor.shape=" ",
+           risk.table = F
+)
+
+plot_ekm
+
+df_residuo$Sobre_res_exp <- exp(-df_residuo$Residuo)
+
+
+plot_exp <- plot_ekm$plot+
+  geom_line(data=df_residuo, aes(x=Residuo, y=Sobre_res_exp), linetype="dashed", linewidth=1.2) 
+
+plot_exp
+
+
+df_residuo2 <- data.frame(ekm = ekm$surv,
+                          t = ekm$time,
+                          sobre_exp1 = exp(-ekm$time))
+
+
+ggplot(df_residuo2, aes(x=ekm, y=sobre_exp1))+
+  geom_point()+
+  ylab("S(t) - Exponencial")+
+  xlab("S(t) - Kaplan-Meier")+
+  geom_abline(aes(intercept=0, slope=1), linewidth=1.1)+
+  ylim(0, 1)+
+  xlim(0, 1)
+
+```
+
+
+
+## Ajuste do Modelo Log Logistico
+
+### Ajuste para cada covariável
+
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+SurvObj = Surv(N_Days,Status)
+
+
+fit1 = survreg(SurvObj ~ Drug, data = dados, dist = "loglogistic")
+fit1
+fit1$loglik
+
+fit2 = survreg(SurvObj ~ Age, data = dados, dist = "loglogistic")
+fit2
+fit2$loglik
+
+fit3 = survreg(SurvObj ~ Sex, data = dados, dist = "loglogistic")
+fit3
+fit3$loglik
+
+fit4 = survreg(SurvObj ~ Ascites, data = dados, dist = "loglogistic")
+fit4
+fit4$loglik
+
+fit5 = survreg(SurvObj ~ Hepatomegaly, data = dados, dist = "loglogistic")
+fit5
+fit5$loglik
+
+fit6 = survreg(SurvObj ~ Spiders, data = dados, dist = "loglogistic")
+fit6
+fit6$loglik
+
+fit7 = survreg(SurvObj ~ Edema, data = dados, dist = "loglogistic")
+fit7
+fit7$loglik
+
+fit8 = survreg(SurvObj ~ Bilirubin, data = dados, dist = "loglogistic")
+fit8
+fit8$loglik
+
+fit9 = survreg(SurvObj ~ Cholesterol, data = dados, dist = "loglogistic")
+fit9
+fit9$loglik
+
+fit10 = survreg(SurvObj ~ Albumin, data = dados, dist = "loglogistic")
+fit10
+fit10$loglik
+
+fit11 = survreg(SurvObj ~ Copper, data = dados, dist = "loglogistic")
+fit11
+fit11$loglik
+
+fit12 = survreg(SurvObj ~ Alk_Phos, data = dados, dist = "loglogistic")
+fit12
+fit12$loglik
+
+fit13 = survreg(SurvObj ~ SGOT, data = dados, dist = "loglogistic")
+fit13
+fit13$loglik
+
+fit14 = survreg(SurvObj ~ Tryglicerides, data = dados, dist = "loglogistic")
+fit14
+fit14$loglik
+
+fit15 = survreg(SurvObj ~ Platelets, data = dados, dist = "loglogistic")
+fit15
+fit15$loglik
+
+fit16 = survreg(SurvObj ~ Prothrombin, data = dados, dist = "loglogistic")
+fit16
+fit16$loglik
+
+fit17 = survreg(SurvObj ~ Stage, data = dados, dist = "loglogistic")
+fit17
+fit17$loglik
+
+```
+
+
+
+
+
+
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+#modelo log logistico
+SurvObj = Surv(N_Days,Status)
+
+logistico_todas = survreg(SurvObj ~ Drug + Age + Sex + Ascites + Hepatomegaly + Spiders + Edema + Bilirubin + Cholesterol + Albumin + Copper + Alk_Phos + SGOT + Tryglicerides + Platelets + Prothrombin + Stage, data = dados, dist = "loglogistic")
+
+anova(logistico_todas, test = "Chisq")
+summary(logistico_todas)
+
+```
+
+### Resíduos de Cox-Snell - Modelo Logistico 1
+
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+#Residuos considerando o modelo comleto
+
+formula <- as.formula(~ Drug + Age + Sex + Ascites + Hepatomegaly + Spiders + Edema + Bilirubin + Cholesterol + Albumin + Copper + Alk_Phos + SGOT + Tryglicerides + Platelets + Prothrombin + Stage)
+x <- as.matrix(model.matrix(formula, dados))
+dim(x)
+
+mu <- x%*% logistico_todas$coefficients
+
+residuo <- -log( pnorm((- log(dados$N_Days) + mu) / logistico_todas$scale ) )
+
+summary(residuo)
+
+df_residuo <- data.frame(Tempo = dados$N_Days,
+                         Residuo = residuo,
+                         cens = dados$Status)
+ekm <- survfit(Surv(residuo, cens)~ 1, data= df_residuo)
+
+#summary(ekm)
+
+plot_ekm <- ggsurvplot(ekm, 
+           data = df_residuo, 
+           ylab="S(t) dos residuos",
+           xlab="Residuos",
+           title="",
+           conf.int = F,
+           censor.shape=" ",
+           risk.table = F
+)
+
+plot_ekm
+
+df_residuo$Sobre_res_exp <- exp(-df_residuo$Residuo)
+
+
+plot_exp <- plot_ekm$plot+
+  geom_line(data=df_residuo, aes(x=Residuo, y=Sobre_res_exp), linetype="dashed", linewidth=1.2) 
+
+plot_exp
+
+
+df_residuo2 <- data.frame(ekm = ekm$surv,
+                          t = ekm$time,
+                          sobre_exp1 = exp(-ekm$time))
+
+
+ggplot(df_residuo2, aes(x=ekm, y=sobre_exp1))+
+  geom_point()+
+  ylab("S(t) - Exponencial")+
+  xlab("S(t) - Kaplan-Meier")+
+  geom_abline(aes(intercept=0, slope=1), linewidth=1.1)+
+  ylim(0, 1)+
+  xlim(0, 1)
+
+```
+
+
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+#modelo log logistico
+SurvObj = Surv(N_Days,Status)
+
+logistico_ajuste = survreg(SurvObj ~ Age + Ascites + Hepatomegaly + Spiders + Edema + Bilirubin + Albumin + Copper + SGOT + Prothrombin + Stage, data = dados, dist = "loglogistic")
+
+anova(logistico_ajuste, test = "Chisq")
+summary(logistico_ajuste)
+
+```
+
+
+
+### Resíduos de Cox-Snell - Modelo Logistico 2
+
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+#Residuos considerando o modelo comleto
+
+formula <- as.formula(~ Age + Ascites + Hepatomegaly + Spiders + Edema + Bilirubin + Albumin + Copper + SGOT + Prothrombin + Stage)
+x <- as.matrix(model.matrix(formula, dados))
+dim(x)
+
+mu <- x%*% logistico_ajuste$coefficients
+
+residuo <- -log( pnorm((- log(dados$N_Days) + mu) / logistico_ajuste$scale ) )
+
+summary(residuo)
+
+df_residuo <- data.frame(Tempo = dados$N_Days,
+                         Residuo = residuo,
+                         cens = dados$Status)
+ekm <- survfit(Surv(residuo, cens)~ 1, data= df_residuo)
+
+#summary(ekm)
+
+plot_ekm <- ggsurvplot(ekm, 
+           data = df_residuo, 
+           ylab="S(t) dos residuos",
+           xlab="Residuos",
+           title="",
+           conf.int = F,
+           censor.shape=" ",
+           risk.table = F
+)
+
+plot_ekm
+
+df_residuo$Sobre_res_exp <- exp(-df_residuo$Residuo)
+
+
+plot_exp <- plot_ekm$plot+
+  geom_line(data=df_residuo, aes(x=Residuo, y=Sobre_res_exp), linetype="dashed", linewidth=1.2) 
+
+plot_exp
+
+
+df_residuo2 <- data.frame(ekm = ekm$surv,
+                          t = ekm$time,
+                          sobre_exp1 = exp(-ekm$time))
+
+
+ggplot(df_residuo2, aes(x=ekm, y=sobre_exp1))+
+  geom_point()+
+  ylab("S(t) - Exponencial")+
+  xlab("S(t) - Kaplan-Meier")+
+  geom_abline(aes(intercept=0, slope=1), linewidth=1.1)+
+  ylim(0, 1)+
+  xlim(0, 1)
+
+```
+
+## Teste de Wald - Modelo Log-Normal
+
+
+```{r wald lognormal, message=FALSE, warning=FALSE, paged.print=FALSE}
+
+EMV = c(lognormal_todas$coefficients, lognormal_todas$scale)
+LI = c(lognormal_todas$coefficients, lognormal_todas$scale) -1.96*sqrt(diag(lognormal_todas$var))
+LS = c(lognormal_todas$coefficients, lognormal_todas$scale) +1.96*sqrt(diag(lognormal_todas$var))
+cbind(EMV, LI, LS)
+
+```
+
+  As variáveis Age, Sex, Hepatomegaly, Spiders, Edema, Cholesterol, Albumin, Alk_Phos, Tryglicerides não são significativas.
+  
+  
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+
+EMV = c(lognormal_ajuste$coefficients, lognormal_ajuste$scale)
+LI = c(lognormal_ajuste$coefficients, lognormal_ajuste$scale) -1.96*sqrt(diag(lognormal_ajuste$var))
+LS = c(lognormal_ajuste$coefficients, lognormal_ajuste$scale) +1.96*sqrt(diag(lognormal_ajuste$var))
+cbind(EMV, LI, LS)
+
+```
+
+Percebe-se que o limite superior das variáveis Age, Copper e SGOT ficou bem próximo de 0. Vamos ajustar um novo modelo sem a presença dessas variáveis e depois fazer o TRV.
+
+
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+#ajuste para lognormal - final 
+SurvObj = Surv(N_Days,Status)
+
+lognormal_final = survreg(SurvObj ~ Age + Ascites + Bilirubin + Copper + SGOT + Prothrombin + Stage, data = dados, dist = "lognormal")
+
+lognormal_final1 = survreg(SurvObj ~ Ascites + Bilirubin + Prothrombin + Stage, data = dados, dist = "lognormal")
+
+anova(lognormal_final, test = "Chisq")
+summary(lognormal_final)
+
+anova(lognormal_final1, test = "Chisq")
+summary(lognormal_final1)
+
+```
+
+```{r }
+lognormal_final$loglik
+lognormal_final1$loglik
+
+TRV=2*(988.101 - 972.4334)
+TRV
+1-pchisq(TRV,3)
+
+
+```
+
+Procedendo com o teste da razão de verossimilhanças, obtemos um TRV com valor de 31.3352 e um valor-p de 7.225268e-07. Esses valores fornecem evidências estatísticas para dizer que as variáveis Age, Copper e SGOT são significativas para o modelo.
+
+
+
+### Resíduos de Cox-Snell - Modelo Lognormal 3
+
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+#Residuos considerando o modelo comleto
+
+formula <- as.formula(~ Age + Ascites + Bilirubin + Copper + SGOT + Prothrombin + Stage)
+x <- as.matrix(model.matrix(formula, dados))
+dim(x)
+
+mu <- x%*% lognormal_final$coefficients
+
+residuo <- -log( pnorm((- log(dados$N_Days) + mu) / lognormal_final$scale ) )
+
+summary(residuo)
+
+df_residuo <- data.frame(Tempo = dados$N_Days,
+                         Residuo = residuo,
+                         cens = dados$Status)
+ekm <- survfit(Surv(residuo, cens)~ 1, data= df_residuo)
+
+#summary(ekm)
+
+plot_ekm <- ggsurvplot(ekm, 
+           data = df_residuo, 
+           ylab="S(t) dos residuos",
+           xlab="Residuos",
+           title="",
+           conf.int = F,
+           censor.shape=" ",
+           risk.table = F
+)
+
+plot_ekm
+
+df_residuo$Sobre_res_exp <- exp(-df_residuo$Residuo)
+
+
+plot_exp <- plot_ekm$plot+
+  geom_line(data=df_residuo, aes(x=Residuo, y=Sobre_res_exp), linetype="dashed", linewidth=1.2) 
+
+plot_exp
+
+
+df_residuo2 <- data.frame(ekm = ekm$surv,
+                          t = ekm$time,
+                          sobre_exp1 = exp(-ekm$time))
+
+
+ggplot(df_residuo2, aes(x=ekm, y=sobre_exp1))+
+  geom_point()+
+  ylab("S(t) - Exponencial")+
+  xlab("S(t) - Kaplan-Meier")+
+  geom_abline(aes(intercept=0, slope=1), linewidth=1.1)+
+  ylim(0, 1)+
+  xlim(0, 1)
+
+```
+
+
+
+
+
+### Resíduos de Cox-Snell - Modelo Lognormal 4
+
+Gráfico para o Modelo sem as variáveis Age, Copper e SGOT.
+
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+#Residuos considerando o modelo comleto
+
+formula <- as.formula(~ Ascites + Bilirubin + Prothrombin + Stage)
+x <- as.matrix(model.matrix(formula, dados))
+dim(x)
+
+mu <- x%*% lognormal_final1$coefficients
+
+residuo <- -log( pnorm((- log(dados$N_Days) + mu) / lognormal_final1$scale ) )
+
+summary(residuo)
+
+df_residuo <- data.frame(Tempo = dados$N_Days,
+                         Residuo = residuo,
+                         cens = dados$Status)
+ekm <- survfit(Surv(residuo, cens)~ 1, data= df_residuo)
+
+#summary(ekm)
+
+plot_ekm <- ggsurvplot(ekm, 
+           data = df_residuo, 
+           ylab="S(t) dos residuos",
+           xlab="Residuos",
+           title="",
+           conf.int = F,
+           censor.shape=" ",
+           risk.table = F
+)
+
+plot_ekm
+
+df_residuo$Sobre_res_exp <- exp(-df_residuo$Residuo)
+
+
+plot_exp <- plot_ekm$plot+
+  geom_line(data=df_residuo, aes(x=Residuo, y=Sobre_res_exp), linetype="dashed", linewidth=1.2) 
+
+plot_exp
+
+
+df_residuo2 <- data.frame(ekm = ekm$surv,
+                          t = ekm$time,
+                          sobre_exp1 = exp(-ekm$time))
+
+
+ggplot(df_residuo2, aes(x=ekm, y=sobre_exp1))+
+  geom_point()+
+  ylab("S(t) - Exponencial")+
+  xlab("S(t) - Kaplan-Meier")+
+  geom_abline(aes(intercept=0, slope=1), linewidth=1.1)+
+  ylim(0, 1)+
+  xlim(0, 1)
+
+```
+
+
+Podemos concluir que o modelo log-normal que contêm as variáveis Age, Copper e SGOT se ajusta melhor aos dados.
