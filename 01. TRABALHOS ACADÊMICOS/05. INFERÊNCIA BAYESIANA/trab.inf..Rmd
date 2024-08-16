@@ -1,0 +1,470 @@
+---
+title: "Trabalho de Inferência Baysiana"
+author: "Trio"
+date: "2024-07-23"
+output: pdf_document
+---
+
+```{r}
+
+```
+
+```{r}
+# Pacotes utilizados
+
+library(coda)
+library(MCMCpack)
+```
+
+
+Questão 01
+
+```{r}
+# Definindo os hiperparâmetros
+alpha <- 0
+nu <- 0.001
+r <- 2.1
+gam <- 1.1
+
+# Dados da amostra
+n <- 20
+x_bar <- 9.3
+s2 <- 3.6
+
+# Parâmetros iniciais
+mu_0 <- x_bar
+sigma2_0 <- s2
+
+# Número de iterações do Gibbs Sampling
+num_itera <- 10000
+
+# Vetores para armazenar as amostras
+mu_amostra <- numeric(num_itera)
+sigma2_amostra <- numeric(num_itera)
+
+# Valores iniciais
+mu <- mu_0
+sigma2 <- sigma2_0
+```
+
+
+Letra a
+
+```{r}
+# Gibbs Sampling
+
+set.seed(2024)
+
+for (i in 1:num_itera) {
+  # Amostra sigma2 | mu, X
+  forma <- r + n / 2
+  escala <- gam + 0.5 * sum((c(rep(x_bar, n)) - mu)^2)
+  sigma2 <- 1 / rgamma(1, shape = forma, rate = escala)
+  
+  # Amostra mu | sigma2, X
+  mu_n <- (nu * alpha + n * x_bar) / (nu + n)
+  var_mu_n <- sigma2 / (nu + n)
+  mu <- rnorm(1, mean = mu_n, sd = sqrt(var_mu_n))
+  
+  # Armazenando as amostras
+  mu_amostra[i] <- mu
+  sigma2_amostra[i] <- sigma2
+}
+```
+
+Continuação a
+```{r}
+# Convergência - Pacote coda
+
+mcmc_chain <- mcmc(cbind(mu_amostra, sigma2_amostra))
+
+# Diagnóstico de Convergência
+
+summary(mcmc_chain)
+```
+
+
+```{r}
+plot(mcmc_chain)
+```
+
+
+```{r}
+autocorr.plot(mcmc_chain)
+```
+
+
+```{r}
+geweke.diag(mcmc_chain)
+```
+
+
+```{r}
+heidel.diag(mcmc_chain)
+```
+
+
+
+Letra b
+
+```{r}
+# Estimativas Pontuais
+mu_mean <- mean(mu_amostra)
+sigma2_mean <- mean(sigma2_amostra)
+
+# Intervalo de Credibilidade (95%)
+mu_ic <- quantile(mu_amostra, probs = c(0.025, 0.975))
+sigma2_ic <- quantile(sigma2_amostra, probs = c(0.025, 0.975))
+
+# Intervalo HPD (95%) usando o pacote coda
+
+mu_hpd <- HPDinterval(mcmc(mu_amostra), prob = 0.95)
+sigma2_hpd <- HPDinterval(mcmc(sigma2_amostra), prob = 0.95)
+
+# Exibindo os resultados
+cat("Estimativas Pontuais:\n")
+cat("Média:", mu_mean, "\n")
+cat("Sigma^2:", sigma2_mean, "\n\n")
+
+cat("Intervalo de Credibilidade (95%):\n")
+cat("Média:", mu_ic, "\n")
+cat("Sigma^2:", sigma2_ic, "\n\n")
+
+cat("Intervalo HPD (95%):\n")
+cat("Média:", mu_hpd, "\n")
+cat("Sigma^2:", sigma2_hpd, "\n")
+```
+
+
+```{r}
+```
+
+Questão 02
+
+
+```{r}
+# A função de verossimilhança
+#log_likelihood <- function(r, lambda, data) {
+ # n <- length(data)
+  #sum(dgamma(data, shape = r, rate = lambda, log = TRUE))
+#}
+```
+
+```{r}
+# Priori
+
+#log_prior_r <- function(r, alpha = 2.1, gamma = 1.1) {
+ # dgamma(r, shape = alpha, rate = gamma, log = TRUE)
+#}
+
+#log_prior_lambda <- function(lambda, delta = 0.001, phi = 0.001) {
+ # dgamma(1/lambda, shape = delta, rate = phi, log = TRUE)
+#}
+```
+
+```{r}
+# O algoritmo
+
+set.seed(123)
+
+library(coda)
+library(MCMCpack)
+
+# Definir a função de verossimilhança
+log_likelihood <- function(r, lambda, data) {
+  n <- length(data)
+  sum(dgamma(data, shape = r, rate = lambda, log = TRUE))
+}
+
+# Funções de prior
+log_prior_r <- function(r, alpha = 0.0001, gamma = (1/0.001)) {
+  dgamma(r, shape = alpha, rate = gamma, log = TRUE)
+}
+
+log_prior_lambda <- function(lambda, delta = 2.1, phi = 1.1) {
+  dgamma(1/lambda, shape = delta, rate = phi, log = TRUE)
+}
+
+# Algoritmo Gibbs Sampling com Metropolis
+gibbs_metropolis <- function(data, n_iter = 10000, r_init = 1, lambda_init = 1, alpha = 0.0001, gamma = (1/0.001), delta = 2.1, phi = 1.1) {
+  n <- length(data)
+  r <- numeric(n_iter)
+  lambda <- numeric(n_iter)
+  r[1] <- r_init
+  lambda[1] <- lambda_init
+  
+  for (i in 2:n_iter) {
+    # Atualizar r
+    r_candidate <- rgamma(1, shape = r[i-1], rate = 5)
+    if (r_candidate > 0) {
+      log_accept_ratio <- log_likelihood(r_candidate, lambda[i-1], data) +
+        log_prior_r(r_candidate, alpha, gamma) - 
+        log_likelihood(r[i-1], lambda[i-1], data) - 
+        log_prior_r(r[i-1], alpha, gamma)
+      
+      if (log(runif(1)) < log_accept_ratio) {
+        r[i] <- r_candidate
+      } else {
+        r[i] <- r[i-1]
+      }
+    } else {
+      r[i] <- r[i-1]
+    }
+    
+    # Atualizar lambda
+    shape_post <- delta + n * r[i]
+    rate_post <- phi + sum(data)
+    lambda[i] <- 1 / rgamma(1, shape = shape_post, rate = rate_post)
+  }
+  
+  return(data.frame(r = r, lambda = lambda))
+}
+
+# Dados observados
+data <- c(10.43, 5.50, 9.12, 4.37, 2.59, 10.64, 8.19, 3.31, 0.96, 4.11)
+
+# Rodar o Gibbs Sampling para duas cadeias
+set.seed(123)
+samples_chain1 <- gibbs_metropolis(data)
+set.seed(123)
+samples_chain2 <- gibbs_metropolis(data)
+
+# Combinar as cadeias em um mcmc.list
+samples_mcmc1 <- as.mcmc(samples_chain1)
+samples_mcmc2 <- as.mcmc(samples_chain2)
+samples_mcmc_list <- mcmc.list(samples_mcmc1, samples_mcmc2)
+
+# Diagnóstico de convergência
+plot(samples_mcmc_list)
+autocorr.plot(samples_mcmc_list)
+gelman.diag(samples_mcmc_list)
+```
+
+Questão 02, com estimativa para o parâmetro
+
+
+```{r}
+# Função de verossimilhança
+log_likelihood <- function(r, lambda, data) {
+  n <- length(data)
+  sum(dgamma(data, shape = r, rate = lambda, log = TRUE))
+}
+
+# Funções de priori
+log_prior_r <- function(r, alpha = 2.1, gamma = 1.1) {
+  dgamma(r, shape = alpha, rate = gamma, log = TRUE)
+}
+
+log_prior_lambda <- function(lambda, delta = 0.001, phi = 0.001) {
+  dgamma(1/lambda, shape = delta, rate = phi, log = TRUE)
+}
+
+# Algoritmo Gibbs Sampling com Metropolis
+gibbs_metropolis <- function(data, n_iter = 10000, r_init = 1, lambda_init = 1, alpha = 2.1, gamma = 1.1, delta = 0.001, phi = 0.001) {
+  n <- length(data)
+  r <- numeric(n_iter)
+  lambda <- numeric(n_iter)
+  r[1] <- r_init
+  lambda[1] <- lambda_init
+  
+  for (i in 2:n_iter) {
+    # Atualizar r
+    r_candidate <- rnorm(1, mean = r[i-1], sd = 0.1)
+    if (r_candidate > 0) {
+      log_accept_ratio <- log_likelihood(r_candidate, lambda[i-1], data) +
+        log_prior_r(r_candidate, alpha, gamma) - 
+        log_likelihood(r[i-1], lambda[i-1], data) - 
+        log_prior_r(r[i-1], alpha, gamma)
+      
+      if (log(runif(1)) < log_accept_ratio) {
+        r[i] <- r_candidate
+      } else {
+        r[i] <- r[i-1]
+      }
+    } else {
+      r[i] <- r[i-1]
+    }
+    
+    # Atualizar lambda
+    shape_post <- delta + n * r[i]
+    rate_post <- phi + sum(data)
+    lambda[i] <- 1 / rgamma(1, shape = shape_post, rate = rate_post)
+  }
+  
+  return(data.frame(r = r, lambda = lambda))
+}
+
+# Dados observados
+data <- c(0.19, 2.32, 2.03, 0.53, 1.14, 0.52, 1.04, 0.25, 0.16, 0.34)
+
+# Rodar o Gibbs Sampling para duas cadeias
+set.seed(123)
+samples_chain1 <- gibbs_metropolis(data)
+set.seed(123)
+samples_chain2 <- gibbs_metropolis(data)
+
+# Combinar as cadeias em um mcmc.list
+samples_mcmc1 <- as.mcmc(samples_chain1)
+samples_mcmc2 <- as.mcmc(samples_chain2)
+samples_mcmc_list <- mcmc.list(samples_mcmc1, samples_mcmc2)
+
+# Diagnóstico de convergência
+plot(samples_mcmc_list)
+autocorr.plot(samples_mcmc_list)
+gelman.diag(samples_mcmc_list)
+
+# Estimar os parâmetros r e lambda
+# Descartar as primeiras 1000 iterações como burn-in
+burn_in <- 1000
+samples_post_burnin <- window(samples_mcmc_list, start = burn_in)
+
+# Calcular a média das amostras pós burn-in
+r_mean <- mean(as.matrix(samples_post_burnin[, "r"]))
+lambda_mean <- mean(as.matrix(samples_post_burnin[, "lambda"]))
+
+# Exibir as estimativas
+cat("Estimativa de r:", r_mean, "\n")
+cat("Estimativa de lambda:", lambda_mean, "\n")
+```
+
+
+Questão 03
+
+c)
+```{r}
+library(ggplot2)
+library(coda)
+library(MCMCpack)
+# Sequência observada
+Y = c(2, 5, 0, 1, 0, 0, 2, 1, 9, 8, 8, 10, 12, 14, 4)
+n = length(Y)
+
+# Parâmetros da distribuição a priori Gama (vaga)
+a = 1
+b = 1
+c = 1
+d = 1
+
+# Configurações do MCMC
+num_iter = 10000
+tune = 2  # Parâmetro de ajuste para a proposta do Metropolis-Hastings
+
+# Inicializar as cadeias
+lambda_chain = numeric(num_iter)
+phi_chain = numeric(num_iter)
+m_chain = numeric(num_iter)
+
+# Inicializar os valores
+set.seed(42)
+lambda_chain[1] = rgamma(1, a, b)
+phi_chain[1] = rgamma(1, c, d)
+m_chain[1] = sample(1:n, 1)
+
+
+for (iter in 2:num_iter) {
+  # Atualizar lambda
+  m_current = m_chain[iter - 1]
+  lambda_shape = sum(Y[1:m_current]) + a
+  lambda_rate = m_current + b
+  lambda_chain[iter] = rgamma(1, lambda_shape, lambda_rate)
+  
+  # Atualizar phi
+  phi_shape = sum(Y[(m_current + 1):n]) + c
+  phi_rate = (n - m_current) + d
+  phi_chain[iter] = rgamma(1, phi_shape, phi_rate)
+  
+  # Atualizar m usando Metropolis-Hastings
+  lambda_current = lambda_chain[iter]
+  phi_current = phi_chain[iter]
+  
+  a = max(1, m_current - tune)
+  b = min(n, m_current + tune)
+  m_proposal = sample(a:b, 1)
+  
+  log_posterior_current = sum(dpois(Y[1:m_current], lambda_current, log = TRUE)) +
+    sum(dpois(Y[(m_current + 1):n], phi_current, log = TRUE))
+  
+  log_posterior_proposal = sum(dpois(Y[1:m_proposal], lambda_current, log = TRUE)) +
+    sum(dpois(Y[(m_proposal + 1):n], phi_current, log = TRUE))
+  
+  acceptance_ratio = exp(log_posterior_proposal - log_posterior_current)
+  
+  if (runif(1) < acceptance_ratio) {
+    m_chain[iter] = m_proposal
+  } else {
+    m_chain[iter] = m_current
+  }
+}
+
+# Remover os primeiros valores da cadeia (burn-in)
+burn_in = 2000
+lambda_chain = lambda_chain[-(1:burn_in)]
+phi_chain = phi_chain[-(1:burn_in)]
+m_chain = m_chain[-(1:burn_in)]
+```
+
+```{r}
+
+# diagnostico
+mcmc_chain = mcmc(cbind(m_chain, lambda_chain, phi_chain))
+samples_mcmc_list = mcmc.list(as.mcmc(m_chain), as.mcmc(lambda_chain), as.mcmc(phi_chain))
+gelman.diag(samples_mcmc_list)
+plot(mcmc_chain)
+autocorr.plot(mcmc_chain)
+```
+
+```{r}
+# Converter as cadeias para data frames
+df_m = data.frame(iter = 1:length(m_chain), m = m_chain)
+df_lambda = data.frame(iter = 1:length(lambda_chain), lambda = lambda_chain)
+df_phi = data.frame(iter = 1:length(phi_chain), phi = phi_chain)
+
+# Histograma da distribuição posteriori de m
+ggplot(df_m, aes(x = m)) +
+  geom_histogram(binwidth = 1, fill = "lightblue", color = "black") +
+  geom_vline(xintercept = 8, color = "red", linetype = "solid", linewidth = 1) +
+  geom_vline(xintercept = mean(df_m$m), color = "blue", linetype = "dashed", linewidth = 1) +
+  labs(title = "Distribuição Posteriori de m", x = "m", y = "Frequência") +
+  theme_minimal()
+
+# Densidade da distribuição posteriori de m
+ggplot(df_m, aes(x = m)) +
+  geom_density(fill = "lightblue") +
+  geom_vline(xintercept = 8, color = "red", linetype = "solid", linewidth = 1) +
+  geom_vline(xintercept = mean(df_m$m), color = "blue", linetype = "dashed", linewidth = 1) +
+  labs(title = "Densidade da Distribuição Posteriori de m", x = "m", y = "Densidade") +
+  theme_minimal()
+
+```
+
+d)
+
+```{r}
+# Cálculo das estimativas pontuais
+rbind(media_lambda = mean(lambda_chain),
+  modiana_lambda = median(lambda_chain),
+  desvio_lambda = sd(lambda_chain))
+
+rbind(media_phi = mean(phi_chain),
+  mediana_phi = median(phi_chain),
+  desvio = sd(phi_chain))
+
+rbind(media_m = mean(m_chain),
+  mediana_m = median(m_chain),
+  sd_m = sd(m_chain))
+
+# Cálculo dos intervalos de credibilidade de 95%
+rbind(cred_lambda= quantile(lambda_chain, c(0.025, 0.975)),
+ cred_phi = quantile(phi_chain, c(0.025, 0.975)),
+ cred_m = quantile(m_chain, c(0.025, 0.975)))
+
+# Cálculo dos intervalos HPD de 95%
+rbind(hpd_lambda = HPDinterval(as.mcmc(lambda_chain), prob = 0.95),
+      hpd_phi = HPDinterval(as.mcmc(phi_chain), prob = 0.95),
+      hpd_m = HPDinterval(as.mcmc(m_chain), prob = 0.95))
+
+
+summary(mcmc_chain)
+
+```
+
